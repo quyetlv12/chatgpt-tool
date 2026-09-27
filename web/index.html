@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Shoptaikhoan Suite</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <nav aria-label="Công cụ">
+    <button class="active" data-module="twofa" data-url="http://twofa.localhost:5050/">2FA & Password <span></span></button>
+    <button data-module="export" data-url="http://export.localhost:5050/">Codex Export <span></span></button>
+    <button data-module="browser" data-url="http://browser.localhost:5050/">Browser Login & 9Router <span></span></button>
+    <a id="open-module" href="http://twofa.localhost:5050/" target="_blank" rel="noreferrer">Mở riêng ↗</a>
+  </nav>
+  <main>
+    <div id="loading">Module đang khởi động…</div>
+    <iframe id="workspace" title="Shoptaikhoan module" src="http://twofa.localhost:5050/" allow="clipboard-write"></iframe>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>

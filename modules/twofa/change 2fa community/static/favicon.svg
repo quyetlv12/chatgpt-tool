@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>Shoptaikhoan Tool</title>
+  <defs>
+    <linearGradient id="accent" x1="14" y1="12" x2="50" y2="54" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#53e8ff"/>
+      <stop offset="1" stop-color="#55edbd"/>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="60" height="60" rx="15" fill="#06111f" stroke="#174a63" stroke-width="2"/>
+  <path d="M32 10 49 17v13c0 11-6.8 18.4-17 23-10.2-4.6-17-12-17-23V17Z" fill="#0b2b3e" stroke="url(#accent)" stroke-width="3" stroke-linejoin="round"/>
+  <circle cx="32" cy="29" r="6" fill="#06111f" stroke="url(#accent)" stroke-width="3"/>
+  <path d="M32 35v9" fill="none" stroke="url(#accent)" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="32" cy="29" r="2" fill="#55edbd"/>
+</svg>

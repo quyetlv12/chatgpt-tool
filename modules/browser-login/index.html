@@ -1,0 +1,3456 @@
+<!doctype html>
+<html lang="vi">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>shoptaikhoan auto tool — 9router Manager</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon.png" />
+  <link rel="alternate icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23161922'/%3E%3Ccircle cx='16' cy='16' r='11' fill='%231E2230' stroke='%236366F1' stroke-width='1.5'/%3E%3Cpath d='M17.5 11L13.5 16.5H16.5L14.5 21L19.5 15H16.2L17.5 11Z' fill='%23FACC15'/%3E%3C/svg%3E" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    /* ==========================================================================
+       Slate Pro Theme — High-Contrast, Clean & Readable
+       Clear Hierarchy · High Readability · Elevated Surfaces · Bright Accents
+       ========================================================================== */
+
+    :root {
+      /* Backgrounds — Elevated Slate Scale (brighter, clearly layered) */
+      --bg:             #161922;
+      --surface:        #1E2230;
+      --surface2:       #262B3D;
+      --surface3:       #2F364C;
+      --surface-hover:  #2D3349;
+      --input-bg:       #191C27;
+
+      /* Borders — Visible, Crisp */
+      --border:         rgba(255, 255, 255, 0.10);
+      --border-subtle:  rgba(255, 255, 255, 0.06);
+      --border-strong:  rgba(255, 255, 255, 0.18);
+      --border-focus:   #6366F1;
+
+      /* Typography — High-Contrast, Easy to Read */
+      --text:           #EDF1F7;
+      --text-strong:    #FFFFFF;
+      --muted:          #9AA3B8;
+      --muted-light:    #CBD3E1;
+      --faint:          #6B758E;
+
+      /* Accents — Vibrant Blue-Indigo */
+      --accent:         #6366F1;
+      --accent-hover:   #4F46E5;
+      --accent-active:  #4338CA;
+      --accent-glow:    rgba(99, 102, 241, 0.25);
+      --accent-ring:    rgba(99, 102, 241, 0.35);
+      --accent-dim:     rgba(99, 102, 241, 0.15);
+      --accent-gradient: linear-gradient(135deg, #6366F1 0%, #4F46E5 100%);
+      --accent-gradient-hover: linear-gradient(135deg, #7175F3 0%, #5B53EE 100%);
+
+      /* Status Colors — Bright & Clear */
+      --green:          #34D399;
+      --green-bg:       rgba(52, 211, 153, 0.15);
+      --green-border:   rgba(52, 211, 153, 0.35);
+
+      --yellow:         #FBBF24;
+      --yellow-bg:      rgba(251, 191, 36, 0.15);
+      --yellow-border:  rgba(251, 191, 36, 0.35);
+
+      --red:            #F87171;
+      --red-bg:         rgba(248, 113, 113, 0.15);
+      --red-border:     rgba(248, 113, 113, 0.35);
+
+      --cyan:           #22D3EE;
+      --cyan-bg:        rgba(34, 211, 238, 0.15);
+
+      /* Typography */
+      --sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --mono: "SF Mono", "JetBrains Mono", Consolas, monospace;
+
+      /* Radii */
+      --r:              10px;
+      --r-sm:           8px;
+      --r-xs:           6px;
+
+      /* Elevation / Shadows */
+      --shadow-sm:      0 1px 3px rgba(0, 0, 0, 0.25);
+      --shadow-md:      0 4px 14px rgba(0, 0, 0, 0.3);
+      --shadow-lg:      0 12px 28px rgba(0, 0, 0, 0.45);
+      --shadow-glow:    0 0 16px var(--accent-glow);
+      --shadow-focus:   0 0 0 3px var(--accent-ring);
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      font-size: 14px;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    button, input, textarea, select {
+      font: inherit;
+      color: inherit;
+    }
+
+    button {
+      border: 0;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    a {
+      color: #818CF8;
+      text-decoration: none;
+      transition: color 0.15s ease;
+    }
+
+    a:hover {
+      color: #A5B4FC;
+      text-decoration: underline;
+    }
+
+    code {
+      font-family: var(--mono);
+      font-size: 0.9em;
+      background: var(--surface2);
+      color: #A5B4FC;
+      padding: 2px 6px;
+      border-radius: var(--r-xs);
+      border: 1px solid var(--border);
+    }
+
+    /* Scrollbars */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.18);
+      border-radius: 999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.28);
+    }
+
+    /* ==========================================================================
+       App Shell & Sidebar
+       ========================================================================== */
+    .app-shell {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 250px minmax(0, 1fr);
+      background: var(--bg);
+    }
+
+    .sidebar {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      padding: 20px 14px 18px;
+      border-right: 1px solid var(--border);
+      background: #191D28;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      z-index: 10;
+    }
+
+    .sidebar-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 2px 6px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .sidebar-brand h1 {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: -0.2px;
+      color: var(--text-strong);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .sidebar-brand p {
+      margin: 3px 0 0;
+      font-size: 11.5px;
+      color: var(--muted);
+      line-height: 1.35;
+    }
+
+    .vip-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: linear-gradient(135deg, rgba(99, 102, 241, 0.35), rgba(168, 85, 247, 0.35));
+      border: 1px solid rgba(99, 102, 241, 0.5);
+      color: #C7D2FE;
+      font-size: 9.5px;
+      font-weight: 700;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+    }
+
+    .tabs {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      margin: 0;
+      padding: 0;
+    }
+
+    .tab-btn {
+      min-height: 38px;
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 12px;
+      border: 1px solid transparent;
+      border-radius: var(--r-sm);
+      background: transparent;
+      color: var(--muted-light);
+      font-size: 13.5px;
+      font-weight: 500;
+      text-align: left;
+      transition: all 0.15s ease;
+      position: relative;
+    }
+
+    .tab-btn::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--muted);
+      opacity: 0.5;
+      transition: all 0.15s ease;
+    }
+
+    .tab-btn:hover {
+      color: var(--text-strong);
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .tab-btn:hover::before {
+      opacity: 0.9;
+      background: var(--accent);
+    }
+
+    .tab-btn.active {
+      color: var(--text-strong);
+      background: rgba(99, 102, 241, 0.18);
+      border-color: rgba(99, 102, 241, 0.35);
+      font-weight: 600;
+    }
+
+    .tab-btn.active::before {
+      background: var(--accent);
+      opacity: 1;
+      box-shadow: 0 0 8px var(--accent);
+    }
+
+    .sidebar-bottom {
+      margin-top: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .sidebar-callout {
+      padding: 12px 14px;
+      border-radius: var(--r-sm);
+      border: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    .sidebar-callout strong {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: #A5B4FC;
+      margin-bottom: 3px;
+    }
+
+    .sidebar-callout span {
+      display: block;
+      font-size: 11px;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    /* ==========================================================================
+       Main Shell & Topbar
+       ========================================================================== */
+    .main-shell {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .topbar {
+      min-height: 52px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 0 24px;
+      border-bottom: 1px solid var(--border);
+      background: #1A1E2B;
+      position: sticky;
+      top: 0;
+      z-index: 9;
+    }
+
+    .breadcrumb {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted-light);
+      font-size: 13px;
+    }
+
+    .breadcrumb strong {
+      color: var(--text-strong);
+      font-weight: 600;
+    }
+
+    .crumb-mark {
+      color: var(--faint);
+      font-size: 14px;
+    }
+
+    .topbar-right {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .status-bar {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 5px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 500;
+      white-space: nowrap;
+      border: 1px solid transparent;
+      transition: all 0.2s ease;
+    }
+
+    .status-bar.online {
+      background: var(--green-bg);
+      color: var(--green);
+      border-color: var(--green-border);
+    }
+
+    .status-bar.offline {
+      background: var(--red-bg);
+      color: var(--red);
+      border-color: var(--red-border);
+    }
+
+    .status-bar .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+      box-shadow: 0 0 6px currentColor;
+    }
+
+    .status-bar.online .dot {
+      animation: pulse 2s infinite ease-in-out;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.85); }
+    }
+
+    .profile {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .profile-avatar {
+      width: 30px;
+      height: 30px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: var(--accent-gradient);
+      color: white;
+      font-weight: 700;
+      font-size: 12.5px;
+      box-shadow: 0 2px 8px var(--accent-glow);
+    }
+
+    .profile-copy {
+      line-height: 1.25;
+    }
+
+    .profile-copy strong {
+      display: block;
+      font-size: 12.5px;
+      color: var(--text-strong);
+    }
+
+    .profile-copy span {
+      display: block;
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    /* Content Area — FULL WIDTH */
+    .content {
+      width: 100%;
+      padding: 20px 24px 32px;
+      flex: 1;
+    }
+
+    .page-heading {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .page-kicker {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .page-icon {
+      width: 38px;
+      height: 38px;
+      display: grid;
+      place-items: center;
+      border-radius: var(--r-sm);
+      color: #C7D2FE;
+      background: var(--accent-dim);
+      border: 1px solid var(--accent-ring);
+      font-size: 17px;
+      font-weight: 700;
+    }
+
+    .page-heading h2 {
+      margin: 0;
+      color: var(--text-strong);
+      font-size: 1.35rem;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+    }
+
+    .page-heading p {
+      margin: 3px 0 0;
+      color: var(--muted-light);
+      font-size: 12.5px;
+    }
+
+    .heading-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    .helper-btn {
+      min-height: 34px;
+      padding: 0 14px;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--r-sm);
+      background: var(--surface2);
+      color: var(--muted-light);
+      font-size: 12.5px;
+      font-weight: 500;
+      transition: all 0.15s ease;
+    }
+
+    .helper-btn:hover {
+      background: var(--surface-hover);
+      color: var(--text-strong);
+      border-color: var(--border-strong);
+    }
+
+    /* ==========================================================================
+       Panels, Cards, and Containers
+       ========================================================================== */
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      box-shadow: var(--shadow-sm);
+      overflow: hidden;
+      margin-bottom: 12px;
+    }
+
+    .panel-head {
+      padding: 12px 18px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(0, 0, 0, 0.12);
+    }
+
+    .panel-head h2 {
+      margin: 0;
+      font-size: 13.5px;
+      font-weight: 600;
+      letter-spacing: -0.15px;
+      color: var(--text-strong);
+    }
+
+    .panel-head p {
+      margin: 3px 0 0;
+      font-size: 11.5px;
+      color: var(--muted-light);
+      line-height: 1.4;
+    }
+
+    .panel-head-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .panel-body {
+      padding: 16px 18px;
+    }
+
+    .control-card {
+      padding: 16px 18px;
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      background: var(--surface);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .workflow-grid {
+      display: grid;
+      grid-template-columns: minmax(340px, 0.75fr) minmax(0, 1.4fr);
+      gap: 16px;
+      align-items: start;
+    }
+
+    .control-stack,
+    .results-stack {
+      display: grid;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    /* ==========================================================================
+       Stats Component
+       ========================================================================== */
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .results-stack > .stats {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      margin-bottom: 0;
+    }
+
+    .stat {
+      padding: 10px 14px;
+      border: 1px solid var(--border);
+      border-radius: var(--r-sm);
+      background: var(--surface);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      box-shadow: var(--shadow-sm);
+      transition: all 0.15s ease;
+    }
+
+    .stat:hover {
+      border-color: var(--border-strong);
+      background: var(--surface2);
+    }
+
+    .stat-val {
+      font-family: var(--mono);
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--text-strong);
+      line-height: 1.2;
+    }
+
+    .stat-val.green {
+      color: var(--green);
+    }
+
+    .stat-val.yellow {
+      color: var(--yellow);
+    }
+
+    .stat-val.red {
+      color: var(--red);
+    }
+
+    .stat-label {
+      margin-top: 3px;
+      color: var(--muted-light);
+      font-size: 10.5px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    /* ==========================================================================
+       Progress Card
+       ========================================================================== */
+    .progress-card {
+      padding: 14px 18px;
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      background: var(--surface);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .progress-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+
+    .progress-title {
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--text-strong);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .progress-percent {
+      font-family: var(--mono);
+      font-size: 12.5px;
+      font-weight: 700;
+      color: #A5B4FC;
+    }
+
+    .progress-track {
+      width: 100%;
+      height: 7px;
+      border-radius: 999px;
+      background: var(--input-bg);
+      border: 1px solid var(--border);
+      overflow: hidden;
+    }
+
+    .progress-bar {
+      height: 100%;
+      width: 0%;
+      border-radius: 999px;
+      background: var(--accent-gradient);
+      box-shadow: 0 0 10px var(--accent-glow);
+      transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .progress-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 10px;
+      font-size: 11.5px;
+      color: var(--muted-light);
+    }
+
+    .progress-status-text {
+      color: var(--muted-light);
+    }
+
+    .active-account-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 10px;
+      border-radius: 999px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: #E2E8F0;
+      font-size: 11.5px;
+      font-family: var(--mono);
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* ==========================================================================
+       Buttons & Actions
+       ========================================================================== */
+    .actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+      margin-top: 12px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      min-height: 38px;
+      padding: 0 16px;
+      border-radius: var(--r-sm);
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: -0.1px;
+      transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+      cursor: pointer;
+      position: relative;
+    }
+
+    .btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+      pointer-events: none;
+    }
+
+    .btn-primary {
+      background: var(--accent-gradient);
+      color: #FFFFFF;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    }
+
+    .btn-primary:hover {
+      background: var(--accent-gradient-hover);
+      box-shadow: 0 0 14px var(--accent-glow), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+    }
+
+    .btn-primary:active {
+      transform: translateY(0);
+    }
+
+    .btn-ghost {
+      background: var(--surface2);
+      color: var(--text-strong);
+      border: 1px solid var(--border-strong);
+    }
+
+    .btn-ghost:hover {
+      background: var(--surface-hover);
+      border-color: rgba(255, 255, 255, 0.25);
+    }
+
+    .btn-pause {
+      background: var(--yellow-bg);
+      color: var(--yellow);
+      border: 1px solid var(--yellow-border);
+    }
+
+    .btn-pause:hover {
+      background: rgba(251, 191, 36, 0.25);
+    }
+
+    .btn-danger {
+      background: var(--red-bg);
+      color: var(--red);
+      border: 1px solid var(--red-border);
+    }
+
+    .btn-danger:hover {
+      background: rgba(248, 113, 113, 0.25);
+    }
+
+    .btn-compact {
+      min-height: 30px;
+      padding: 0 12px;
+      font-size: 12px;
+      font-weight: 500;
+      border-radius: var(--r-xs);
+      background: var(--surface2);
+      color: var(--muted-light);
+      border: 1px solid var(--border);
+      transition: all 0.15s ease;
+    }
+
+    .btn-compact:hover {
+      background: var(--surface-hover);
+      color: var(--text-strong);
+      border-color: var(--border-strong);
+    }
+
+    .btn-history {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 34px;
+      padding: 0 14px;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--r-sm);
+      background: var(--surface2);
+      color: var(--text-strong);
+      font-size: 12.5px;
+      font-weight: 600;
+      transition: all 0.15s ease;
+      cursor: pointer;
+    }
+
+    .btn-history:hover {
+      background: var(--surface-hover);
+      border-color: var(--accent);
+    }
+
+    .btn-history .history-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 6px var(--accent);
+    }
+
+    /* ==========================================================================
+       Form Inputs — High Readability
+       ========================================================================== */
+    .field-label {
+      display: block;
+      margin-top: 14px;
+      margin-bottom: 6px;
+      color: var(--text-strong);
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.1px;
+    }
+
+    textarea,
+    input[type="url"],
+    input[type="number"],
+    input[type="text"] {
+      display: block;
+      width: 100%;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--r-sm);
+      background: var(--input-bg);
+      color: var(--text-strong);
+      padding: 11px 13px;
+      font-family: var(--mono);
+      font-size: 12.5px;
+      line-height: 1.5;
+      outline: none;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    textarea:focus,
+    input[type="url"]:focus,
+    input[type="number"]:focus,
+    input[type="text"]:focus {
+      border-color: var(--accent);
+      box-shadow: var(--shadow-focus);
+    }
+
+    textarea::placeholder,
+    input::placeholder {
+      color: var(--muted);
+      opacity: 1;
+    }
+
+    textarea {
+      resize: vertical;
+      min-height: 120px;
+    }
+
+    #web-login-link-input {
+      min-height: 48px;
+      padding: 9px 12px;
+      resize: vertical;
+      font-size: 12px;
+    }
+
+    #web-login-link-input:disabled {
+      resize: none;
+      color: var(--faint);
+      background: rgba(15, 18, 28, 0.72);
+      border-color: var(--border-subtle);
+      cursor: not-allowed;
+      opacity: 0.72;
+    }
+
+    .field-label-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 14px;
+      margin-bottom: 6px;
+    }
+
+    .field-label-row .field-label {
+      margin: 0;
+    }
+
+    .feature-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      color: var(--muted-light);
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .feature-toggle input {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .toggle-track {
+      position: relative;
+      width: 36px;
+      height: 20px;
+      flex: 0 0 auto;
+      border: 1px solid var(--border-strong);
+      border-radius: 999px;
+      background: var(--surface3);
+      transition: background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+    }
+
+    .toggle-track::after {
+      content: "";
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--muted-light);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+      transition: transform 0.18s ease, background 0.18s ease;
+    }
+
+    .feature-toggle input:checked + .toggle-track {
+      border-color: var(--accent);
+      background: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-dim);
+    }
+
+    .feature-toggle input:checked + .toggle-track::after {
+      transform: translateX(16px);
+      background: #fff;
+    }
+
+    .feature-toggle input:focus-visible + .toggle-track {
+      box-shadow: var(--shadow-focus);
+    }
+
+    .field-help {
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 10.5px;
+      line-height: 1.4;
+    }
+
+    .control-compact-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    /* Config Row & Items */
+    .config-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin: 10px 0;
+    }
+
+    .config-item {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 5px;
+      padding: 10px 13px;
+      background: rgba(0, 0, 0, 0.12);
+      border: 1px solid var(--border);
+      border-radius: var(--r-sm);
+    }
+
+    .config-item--check {
+      flex-direction: row;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .config-item--check input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+      accent-color: var(--accent);
+      flex-shrink: 0;
+      margin: 0;
+    }
+
+    .config-label {
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--text-strong);
+      cursor: default;
+    }
+
+    .config-hint {
+      font-size: 11px;
+      color: var(--muted-light);
+      line-height: 1.35;
+    }
+
+    .config-input-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .section-label {
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--text-strong);
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .section-hint {
+      font-size: 11px;
+      font-weight: 400;
+      color: var(--muted);
+      font-family: var(--mono);
+    }
+
+    /* OAuth Tab Mode Switcher */
+    .oauth-mode-tabs {
+      display: flex;
+      gap: 0;
+      margin-bottom: 14px;
+      border: 1px solid var(--border);
+      border-radius: var(--r-sm);
+      overflow: hidden;
+      background: rgba(0,0,0,0.15);
+    }
+
+    .oauth-tab {
+      flex: 1;
+      padding: 9px 14px;
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--muted-light);
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      text-align: center;
+    }
+
+    .oauth-tab:hover {
+      color: var(--text-strong);
+      background: rgba(255,255,255,0.04);
+    }
+
+    .oauth-tab.active {
+      color: var(--text-strong);
+      background: rgba(99, 102, 241, 0.18);
+      box-shadow: inset 0 -2px 0 var(--accent);
+    }
+
+    /* OAuth Actions Row */
+    .oauth-actions {
+      display: flex;
+      gap: 8px;
+      margin: 12px 0 8px;
+    }
+
+    /* OAuth Prereq Notice */
+    .oauth-prereq {
+      font-size: 11px;
+      color: var(--muted);
+      padding: 6px 0;
+    }
+    .oauth-prereq code {
+      font-size: 10.5px;
+      background: rgba(99,102,241,0.12);
+      padding: 1px 5px;
+      border-radius: 3px;
+    }
+
+    /* OAuth Manual Info */
+    .oauth-manual-info {
+      padding: 12px 14px;
+      background: rgba(0,0,0,0.12);
+      border: 1px solid var(--border);
+      border-radius: var(--r-sm);
+      margin-bottom: 12px;
+    }
+    .oauth-manual-info p {
+      margin: 0;
+      font-size: 12.5px;
+      color: var(--text);
+      line-height: 1.5;
+    }
+    .oauth-manual-tags {
+      display: flex;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .tag {
+      display: inline-block;
+      font-size: 10.5px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 4px;
+      letter-spacing: 0.2px;
+    }
+    .tag--ok {
+      background: rgba(52,211,153,0.15);
+      color: #34D399;
+      border: 1px solid rgba(52,211,153,0.25);
+    }
+    .tag--warn {
+      background: rgba(251,191,36,0.15);
+      color: #FBBF24;
+      border: 1px solid rgba(251,191,36,0.25);
+    }
+
+    /* OAuth Status Card */
+    .oauth-status-card {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 16px;
+      border-radius: var(--r-sm);
+      background: var(--surface2);
+      border: 1px solid var(--border);
+    }
+
+    .option-card {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 10px 12px;
+      margin: 8px 0 10px;
+      background: rgba(0, 0, 0, 0.12);
+      border: 1px solid var(--border);
+      border-radius: var(--r-sm);
+      transition: border-color 0.15s ease;
+    }
+
+    .option-card:hover {
+      border-color: var(--border-strong);
+    }
+
+    .option-card input[type="checkbox"] {
+      margin-top: 2px;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+
+    .option-copy {
+      font-size: 12px;
+      line-height: 1.45;
+      cursor: pointer;
+    }
+
+    .option-copy strong {
+      display: block;
+      color: var(--text-strong);
+      font-weight: 600;
+    }
+
+    .option-copy span {
+      display: block;
+      color: var(--muted-light);
+      font-size: 11px;
+    }
+
+    /* ==========================================================================
+       Terminal Log — Animated, Professional
+       ========================================================================== */
+    @keyframes termSlideIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes termFadeIn {
+      from { opacity: 0; }
+      to   { opacity: 1; }
+    }
+    @keyframes cursorBlink {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0; }
+    }
+    @keyframes scanline {
+      0%   { background-position: 0 0; }
+      100% { background-position: 0 100%; }
+    }
+
+    /* Panel override — no panel-head, terminal chrome handles header */
+    .terminal-panel {
+      background: #0C0E16;
+      border: 1px solid rgba(99, 102, 241, 0.22);
+      border-radius: var(--r-sm);
+      overflow: hidden;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.5), inset 0 0 0 1px rgba(255,255,255,0.04);
+    }
+
+    /* macOS-style title bar */
+    .term-titlebar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 14px;
+      background: #13151F;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      user-select: none;
+    }
+    .term-dots {
+      display: flex;
+      gap: 5px;
+    }
+    .term-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+    .term-dot.red    { background: #FF5F57; }
+    .term-dot.yellow { background: #FFBD2E; }
+    .term-dot.green  { background: #28CA41; }
+    .term-title {
+      flex: 1;
+      text-align: center;
+      font-size: 11px;
+      font-family: var(--mono);
+      color: rgba(255,255,255,0.35);
+      letter-spacing: 0.5px;
+    }
+    .term-live {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 10px;
+      font-family: var(--mono);
+      color: #34D399;
+    }
+    .term-live-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #34D399;
+      animation: cursorBlink 1.2s ease-in-out infinite;
+    }
+
+    /* Log body with scanline effect */
+    .activity-log {
+      max-height: 300px;
+      min-height: 160px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      font-family: var(--mono);
+      font-size: 11.5px;
+      background: #0C0E16;
+      padding: 10px 14px 14px;
+      position: relative;
+      scroll-behavior: smooth;
+    }
+    .activity-log::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0, 0, 0, 0.06) 2px,
+        rgba(0, 0, 0, 0.06) 4px
+      );
+      pointer-events: none;
+      z-index: 0;
+    }
+    /* custom scrollbar */
+    .activity-log::-webkit-scrollbar { width: 4px; }
+    .activity-log::-webkit-scrollbar-track { background: transparent; }
+    .activity-log::-webkit-scrollbar-thumb { background: rgba(99,102,241,0.35); border-radius: 2px; }
+
+    /* Each log line */
+    .activity-line {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      grid-template-columns: 60px 1fr;
+      gap: 6px 10px;
+      align-items: baseline;
+      padding: 3px 6px;
+      border-radius: 4px;
+      line-height: 1.55;
+      animation: termSlideIn 0.2s ease both;
+      transition: background 0.15s;
+    }
+    .activity-line:hover {
+      background: rgba(255,255,255,0.04);
+    }
+    .activity-line + .activity-line {
+      border-top: 1px solid rgba(255,255,255,0.03);
+    }
+
+    /* Timestamp */
+    .activity-line time {
+      font-size: 10.5px;
+      color: rgba(255,255,255,0.25);
+      letter-spacing: 0.2px;
+      padding-top: 1px;
+    }
+
+    /* Right side: account + message stacked */
+    .activity-body {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+      min-width: 0;
+    }
+    .activity-account {
+      font-size: 10.5px;
+      color: #818CF8;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .activity-account.system-acc {
+      color: rgba(255,255,255,0.3);
+      font-style: italic;
+    }
+    .activity-message {
+      font-size: 11.5px;
+      color: #C8D0E8;
+      word-break: break-word;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    /* Colored prefix badge */
+    .term-badge {
+      display: inline-block;
+      font-size: 9.5px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      padding: 1px 5px;
+      border-radius: 3px;
+      flex-shrink: 0;
+      vertical-align: middle;
+    }
+
+    /* Level colors */
+    .activity-line.success .term-badge { background: rgba(52,211,153,0.18); color: #34D399; border: 1px solid rgba(52,211,153,0.25); }
+    .activity-line.success .activity-message { color: #D1FAE5; }
+    .activity-line.error   .term-badge { background: rgba(248,113,113,0.18); color: #F87171; border: 1px solid rgba(248,113,113,0.25); }
+    .activity-line.error   .activity-message { color: #FEE2E2; }
+    .activity-line.warning .term-badge { background: rgba(251,191,36,0.18); color: #FBBF24; border: 1px solid rgba(251,191,36,0.25); }
+    .activity-line.warning .activity-message { color: #FEF9C3; }
+    .activity-line.info    .term-badge { background: rgba(99,102,241,0.18); color: #A5B4FC; border: 1px solid rgba(99,102,241,0.2); }
+
+    /* Blinking cursor at end of last line */
+    .activity-line:last-child .activity-message::after {
+      content: '▋';
+      display: inline-block;
+      color: #6366F1;
+      animation: cursorBlink 1s step-start infinite;
+      margin-left: 2px;
+      font-size: 10px;
+    }
+
+    /* Empty state */
+    .term-empty {
+      color: rgba(255,255,255,0.2);
+      font-style: italic;
+      font-size: 11px;
+      padding: 6px;
+      animation: termFadeIn 0.4s ease;
+    }
+    .term-prompt { color: #6366F1; margin-right: 4px; }
+
+    /* Legacy selectors kept for compat */
+    .activity-row, .activity-time, .activity-badge, .activity-text { display: none; }
+
+    /* ==========================================================================
+       Tables & Result Rows
+       ========================================================================== */
+    .tbl-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: var(--r-sm);
+      background: var(--surface);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12.5px;
+      text-align: left;
+    }
+
+    thead {
+      background: rgba(0, 0, 0, 0.12);
+      border-bottom: 1px solid var(--border);
+    }
+
+    th {
+      padding: 10px 14px;
+      color: var(--muted-light);
+      font-size: 11.5px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    td {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border-subtle);
+      color: var(--text);
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    tbody tr:hover {
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    .empty-cell {
+      text-align: center;
+      color: var(--muted-light);
+      padding: 24px !important;
+      font-style: italic;
+    }
+
+    .web-result-row {
+      display: grid;
+      grid-template-columns: 24px minmax(180px, 1fr) minmax(210px, auto) auto;
+      align-items: center;
+      gap: 10px;
+      padding: 7px 10px;
+      margin-bottom: 5px;
+      border: 1px solid transparent;
+      border-radius: var(--r-xs);
+      background: var(--surface2);
+      font-size: 12.5px;
+    }
+
+    .web-result-row:last-child { margin-bottom: 0; }
+    .web-result-email { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .web-result-status { color: var(--green); font-size: 11.5px; text-align: right; }
+    .web-result-status.warning { color: var(--yellow); }
+    .web-result-status.error { color: var(--red); }
+    .web-result-action { min-width: 74px; }
+
+    .history-list {
+      max-height: 240px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .history-row {
+      display: grid;
+      grid-template-columns: 24px minmax(160px, 1fr) 90px 110px;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--r-xs);
+      background: var(--input-bg);
+      font-size: 12px;
+      transition: border-color 0.15s ease;
+    }
+
+    .history-row:hover {
+      border-color: var(--border-strong);
+    }
+
+    .history-row .history-email {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--text-strong);
+      font-family: var(--mono);
+    }
+
+    .history-row .history-status.success { color: var(--green); font-weight: 600; }
+    .history-row .history-status.warning { color: var(--yellow); font-weight: 600; }
+    .history-row .history-status.error   { color: var(--red);   font-weight: 600; }
+    .history-row time {
+      color: var(--muted-light);
+      text-align: right;
+      font-size: 11px;
+    }
+
+    /* ==========================================================================
+       Info Boxes & Alerts
+       ========================================================================== */
+    .info-box {
+      margin-bottom: 12px;
+      padding: 11px 14px;
+      border-left: 3px solid var(--accent);
+      background: rgba(99, 102, 241, 0.1);
+      border-radius: 0 var(--r-sm) var(--r-sm) 0;
+      font-size: 12px;
+      color: var(--text);
+      line-height: 1.5;
+    }
+
+    .info-box strong {
+      color: var(--text-strong);
+      display: block;
+      margin-bottom: 4px;
+      font-size: 12.5px;
+    }
+
+    .msg {
+      padding: 11px 15px;
+      border-radius: var(--r-sm);
+      margin-top: 10px;
+      margin-bottom: 10px;
+      font-size: 12.5px;
+      display: none;
+      border: 1px solid transparent;
+      font-weight: 500;
+    }
+
+    .msg.show {
+      display: block;
+    }
+
+    .msg.ok {
+      background: var(--green-bg);
+      color: var(--green);
+      border-color: var(--green-border);
+    }
+
+    .msg.err {
+      background: var(--red-bg);
+      color: var(--red);
+      border-color: var(--red-border);
+    }
+
+    .drop-zone {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 76px;
+      border: 2px dashed var(--border-strong);
+      border-radius: var(--r-sm);
+      background: var(--surface);
+      cursor: pointer;
+      transition: all 0.15s ease;
+      margin-bottom: 12px;
+      color: var(--muted-light);
+      font-size: 13px;
+    }
+
+    .drop-zone:hover,
+    .drop-zone.drag {
+      border-color: var(--accent);
+      background: var(--surface2);
+      color: #C7D2FE;
+    }
+
+    .del-btn {
+      background: none;
+      border: none;
+      color: var(--red);
+      cursor: pointer;
+      font-size: 13px;
+      opacity: 0.75;
+      transition: opacity 0.15s ease;
+      padding: 4px;
+    }
+
+    .del-btn:hover {
+      opacity: 1;
+    }
+
+    .tag {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 600;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--muted-light);
+    }
+
+    .tag.green {
+      background: var(--green-bg);
+      border-color: var(--green-border);
+      color: var(--green);
+    }
+
+    .workspace-footer {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-top: 20px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+      color: var(--muted-light);
+      font-size: 11.5px;
+    }
+
+    .footer-spacer {
+      flex: 1;
+    }
+
+    /* ==========================================================================
+       History Modal
+       ========================================================================== */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      background: rgba(10, 12, 18, 0.7);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.18s ease;
+    }
+
+    .modal-overlay.open {
+      opacity: 1;
+      pointer-events: all;
+    }
+
+    .modal {
+      width: min(680px, 100%);
+      max-height: 80vh;
+      display: flex;
+      flex-direction: column;
+      background: var(--surface);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--r);
+      box-shadow: var(--shadow-lg);
+      transform: translateY(8px) scale(0.98);
+      transition: transform 0.18s ease;
+      overflow: hidden;
+    }
+
+    .modal-overlay.open .modal {
+      transform: translateY(0) scale(1);
+    }
+
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+      background: rgba(0, 0, 0, 0.12);
+    }
+
+    .modal-header h3 {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-strong);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .modal-header p {
+      margin: 2px 0 0;
+      font-size: 11.5px;
+      color: var(--muted-light);
+    }
+
+    .modal-close {
+      width: 28px;
+      height: 28px;
+      display: grid;
+      place-items: center;
+      border-radius: var(--r-xs);
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--muted-light);
+      font-size: 16px;
+      line-height: 1;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      flex-shrink: 0;
+    }
+
+    .modal-close:hover {
+      background: var(--surface-hover);
+      color: var(--text-strong);
+      border-color: var(--border-strong);
+    }
+
+    .modal-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 18px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(0, 0, 0, 0.08);
+      flex-shrink: 0;
+    }
+
+    .modal-count {
+      font-size: 12px;
+      color: var(--muted-light);
+      font-family: var(--mono);
+    }
+
+    .modal-body {
+      overflow-y: auto;
+      padding: 14px 18px;
+      flex: 1;
+    }
+
+    .modal-body .history-row {
+      display: grid;
+      grid-template-columns: 20px minmax(160px, 1fr) 110px 120px;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 12px;
+    }
+
+    .modal-footer {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      padding: 12px 18px;
+      border-top: 1px solid var(--border);
+      background: rgba(0, 0, 0, 0.08);
+      flex-shrink: 0;
+    }
+
+    /* Utilities */
+    .hidden {
+      display: none !important;
+    }
+
+    /* Responsive */
+    @media (max-width: 1180px) {
+      .workflow-grid {
+        grid-template-columns: 1fr;
+      }
+      .activity-log {
+        max-height: 220px;
+      }
+    }
+
+    @media (max-width: 900px) {
+      .app-shell {
+        grid-template-columns: 210px minmax(0, 1fr);
+      }
+      .content, .topbar {
+        padding-left: 16px;
+        padding-right: 16px;
+      }
+    }
+
+    @media (max-width: 767px) {
+      .app-shell {
+        display: block;
+      }
+      .sidebar {
+        position: static;
+        height: auto;
+        padding: 12px 14px;
+        gap: 12px;
+        border-right: 0;
+        border-bottom: 1px solid var(--border);
+      }
+      .tabs {
+        flex-direction: row;
+        overflow-x: auto;
+        scrollbar-width: none;
+      }
+      .tabs::-webkit-scrollbar {
+        display: none;
+      }
+      .tab-btn {
+        flex: 0 0 auto;
+        width: auto;
+      }
+      .sidebar-bottom {
+        display: none;
+      }
+      .topbar {
+        padding: 0 12px;
+      }
+      .profile-copy {
+        display: none;
+      }
+      .content {
+        padding: 14px 12px;
+      }
+      .control-compact-grid {
+        grid-template-columns: 1fr;
+      }
+      .results-stack > .stats {
+        grid-template-columns: repeat(2, 1fr);
+      }
+      .web-result-row {
+        grid-template-columns: 24px minmax(0, 1fr) auto;
+      }
+      .web-result-status {
+        grid-column: 2 / -1;
+        grid-row: 2;
+        text-align: left;
+      }
+    }
+
+  </style>
+</head>
+
+<body>
+  <main class="app app-shell">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div>
+          <h1>shoptaikhoan auto tool <span class="vip-badge">PRO</span></h1>
+          <p>Automation tools for a smarter future</p>
+        </div>
+      </div>
+      <nav class="tabs" aria-label="Điều hướng công cụ">
+        <button class="tab-btn" data-tab="oauth">OAuth Login</button>
+        <button class="tab-btn active" data-tab="web-login">ChatGPT Web</button>
+        <button class="tab-btn" data-tab="import">Import Session</button>
+        <button class="tab-btn" data-tab="accounts">Tài khoản hiện có</button>
+        <button class="tab-btn" data-tab="file">Import từ file</button>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="sidebar-callout">
+          <strong>Premium workspace</strong>
+          <span>Toàn quyền điều khiển các luồng đăng nhập.</span>
+        </div>
+      </div>
+    </aside>
+    <div class="main-shell">
+      <header class="topbar">
+        <div class="breadcrumb"><span>Tools</span><span class="crumb-mark">/</span><strong>ChatGPT Web</strong></div>
+        <div class="topbar-right">
+          <div class="status-bar offline" id="status-bar"><span class="dot"></span><span id="status-text">Đang kết nối...</span></div>
+          <div class="profile"><div class="profile-avatar">Q</div><div class="profile-copy"><strong>Quản trị viên</strong><span>Premium workspace</span></div></div>
+        </div>
+      </header>
+      <div class="content">
+        <div class="page-heading">
+          <div class="page-kicker">
+            <div class="page-icon" aria-hidden="true">◎</div>
+            <div><h2>ChatGPT Web</h2><p>Đăng nhập trực tiếp trên web, giữ nguyên từng cửa sổ Chrome.</p></div>
+          </div>
+          <div class="heading-actions">
+            <button class="btn-history" id="btn-open-history" type="button"><span class="history-dot"></span>Lịch sử tài khoản</button>
+            <button class="helper-btn" type="button">Hướng dẫn sử dụng</button>
+          </div>
+        </div>
+
+    <!-- TAB 1: Import Session -->
+    <section class="tab-content hidden" id="tab-import">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Dán Session ChatGPT</h2>
+          <p>Lấy từ <code>chatgpt.com/api/auth/session</code> — hỗ trợ 1 hoặc nhiều session</p>
+        </div>
+        <div class="panel-body">
+          <div class="info-box">
+            <strong>Cách lấy session</strong>
+            Đăng nhập ChatGPT → mở <a href="https://chatgpt.com/api/auth/session"
+              target="_blank">chatgpt.com/api/auth/session</a> → copy JSON → dán vào đây.
+          </div>
+          <div class="actions">
+            <button class="btn btn-ghost" id="btn-clear">Xóa</button>
+          </div>
+          <textarea id="session-input" spellcheck="false"
+            placeholder='Dán JSON session ở đây...&#10;&#10;{"user":{"email":"you@gmail.com"},"accessToken":"eyJ...","expires":"2026-..."}'></textarea>
+        </div>
+      </div>
+
+      <div class="stats">
+        <div class="stat">
+          <div class="stat-val green" id="s-parsed">0</div>
+          <div class="stat-label">Đã parse</div>
+        </div>
+        <div class="stat">
+          <div class="stat-val yellow" id="s-skip">0</div>
+          <div class="stat-label">Đã có (sẽ update)</div>
+        </div>
+        <div class="stat">
+          <div class="stat-val" id="s-err">0</div>
+          <div class="stat-label">Lỗi</div>
+        </div>
+      </div>
+
+      <div class="tbl-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Email</th>
+              <th>Plan</th>
+              <th>Hết hạn</th>
+            </tr>
+          </thead>
+          <tbody id="preview-body">
+            <tr>
+              <td colspan="4" class="empty-cell">Chưa có session.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="msg" id="import-msg"></div>
+
+      <button class="btn btn-primary btn-block" id="btn-import" disabled>
+        ⚡ Import vào 9router
+      </button>
+      <div style="height:8px"></div>
+      <button class="btn btn-ghost btn-block" id="btn-download" disabled>
+        ⬇ Tải xuống JSON (nếu server offline)
+      </button>
+    </section>
+
+    <!-- TAB 2: Accounts -->
+    <section class="tab-content hidden" id="tab-accounts">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Codex accounts trong 9router</h2>
+          <p>Danh sách accounts đang có trong SQLite database</p>
+        </div>
+        <div class="panel-body">
+          <div class="actions">
+            <button class="btn btn-ghost" id="btn-refresh">🔄 Refresh</button>
+          </div>
+          <div id="acc-count" style="color:var(--muted);font-size:.85rem;margin-bottom:10px"></div>
+          <div class="tbl-wrap" style="max-height:500px">
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Email</th>
+                  <th>Plan</th>
+                  <th>Hết hạn</th>
+                  <th>Trạng thái</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="acc-body">
+                <tr>
+                  <td colspan="6" class="empty-cell">Đang tải...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 3: Import từ file (multi-file) -->
+    <section class="tab-content hidden" id="tab-file">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Import từ file JSON</h2>
+          <p>Chọn nhiều file — hỗ trợ cả <strong>session ChatGPT</strong> lẫn <strong>backup 9router</strong></p>
+        </div>
+        <div class="panel-body">
+          <input type="file" id="file-input" accept=".json" class="hidden" multiple />
+          <div class="drop-zone" id="drop-zone">📂 Kéo thả hoặc click để chọn file JSON (chọn nhiều file)</div>
+
+          <div class="stats" id="file-stats" style="display:none">
+            <div class="stat">
+              <div class="stat-val green" id="fs-files">0</div>
+              <div class="stat-label">File đã chọn</div>
+            </div>
+            <div class="stat">
+              <div class="stat-val green" id="fs-total">0</div>
+              <div class="stat-label">Tổng accounts</div>
+            </div>
+            <div class="stat">
+              <div class="stat-val" id="fs-err">0</div>
+              <div class="stat-label">File lỗi</div>
+            </div>
+          </div>
+
+          <!-- File list -->
+          <div id="file-list" style="margin-bottom:14px"></div>
+
+          <div class="tbl-wrap" style="max-height:400px">
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Email</th>
+                  <th>Plan</th>
+                  <th>Hết hạn</th>
+                  <th>Nguồn</th>
+                </tr>
+              </thead>
+              <tbody id="file-body">
+                <tr>
+                  <td colspan="5" class="empty-cell">Chưa chọn file.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div style="display:flex;gap:8px;margin-bottom:10px">
+            <button class="btn btn-ghost" id="btn-file-clear" style="display:none">🗑 Xóa tất cả</button>
+            <button class="btn btn-ghost" id="btn-file-add">+ Thêm file</button>
+          </div>
+
+          <div class="msg" id="file-msg"></div>
+          <button class="btn btn-primary btn-block" id="btn-file-import" disabled>⚡ Import tất cả vào 9router</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 4: OAuth Login -->
+    <section class="tab-content hidden" id="tab-oauth">
+      <div class="workflow-grid">
+        <div class="control-stack">
+          <div class="control-card">
+            <!-- Mode selector -->
+            <div class="oauth-mode-tabs">
+              <button class="oauth-tab active" data-mode="auto" id="mode-auto">Auto Login</button>
+              <button class="oauth-tab" data-mode="manual" id="mode-manual">Manual Login</button>
+            </div>
+
+            <!-- AUTO MODE -->
+            <div id="oauth-auto-section">
+              <div class="section-label">Danh sách tài khoản <span class="section-hint">email|password|2fa</span></div>
+              <textarea id="oauth-accounts-input" spellcheck="false" style="min-height:120px"
+                placeholder="email@icloud.com|Password123@|TOTP_SECRET&#10;user2@gmail.com|password123|&#10;user3@gmail.com|pass456|ABCDEF123456"></textarea>
+
+              <div class="config-row">
+                <div class="config-item config-item--check">
+                  <input type="checkbox" id="oauth-headless-toggle" />
+                  <div>
+                    <label for="oauth-headless-toggle" class="config-label">Ẩn Chrome</label>
+                    <span class="config-hint">Chạy Chromium dưới nền</span>
+                  </div>
+                </div>
+                <div class="config-item">
+                  <label class="config-label">Luồng song song</label>
+                  <div class="config-input-row">
+                    <input id="oauth-workers-input" type="number" min="1" step="1" value="3" inputmode="numeric" aria-label="Số luồng Auto Login" style="width:72px;padding:8px 10px;text-align:center;font-family:var(--mono);font-size:1.1rem;font-weight:700" />
+                    <span class="config-hint">Chrome cùng lúc</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="oauth-actions">
+                <button class="btn btn-primary" id="btn-auto-login" style="flex:1">Auto Login tất cả</button>
+                <button class="btn btn-danger" id="btn-auto-stop" style="display:none">Dừng</button>
+              </div>
+
+              <div class="oauth-prereq">
+                Yêu cầu: <code>python server.py</code> + <code>playwright</code> + <code>pyotp</code>
+              </div>
+            </div>
+
+            <!-- MANUAL MODE -->
+            <div id="oauth-manual-section" style="display:none">
+              <div class="oauth-manual-info">
+                <p>Bấm nút → đăng nhập trên trang OpenAI → tự redirect về và import token.</p>
+                <div class="oauth-manual-tags">
+                  <span class="tag tag--ok">Token vĩnh viễn</span>
+                  <span class="tag tag--warn">Thủ công từng nick</span>
+                </div>
+              </div>
+              <button class="btn btn-primary btn-block" id="btn-oauth-login">Login ChatGPT (OAuth)</button>
+            </div>
+          </div>
+          <div class="msg" id="oauth-msg"></div>
+        </div>
+
+        <div class="results-stack">
+          <div class="stats" id="oauth-parse-stats" style="display:none">
+            <div class="stat"><div class="stat-val green" id="oa-parsed">0</div><div class="stat-label">Tài khoản</div></div>
+            <div class="stat"><div class="stat-val" id="oa-2fa">0</div><div class="stat-label">Có 2FA</div></div>
+            <div class="stat"><div class="stat-val green" id="oa-done">0</div><div class="stat-label">Xong</div></div>
+            <div class="stat"><div class="stat-val" id="oa-fail">0</div><div class="stat-label">Lỗi</div></div>
+          </div>
+
+          <!-- Progress -->
+          <div class="progress-card" id="oauth-progress" style="display:none">
+            <div class="progress-head"><span>Tiến trình OAuth</span><span id="oauth-elapsed" style="display:none;font-family:var(--mono);font-size:.78rem;color:var(--green)">⏱ 00:00</span></div>
+            <div class="progress-track"><div id="oauth-progress-bar" style="width:0%"></div></div>
+            <div class="progress-meta"><span id="oauth-progress-text">Chưa bắt đầu</span><span id="oauth-active-workers" style="display:none"></span></div>
+          </div>
+
+          <!-- Status box -->
+          <div id="oauth-status-box" class="oauth-status-card" style="display:none">
+            <div id="oauth-status-icon" style="font-size:1.8rem">⏳</div>
+            <div id="oauth-status-text" style="font-size:.85rem;color:var(--text)">Đang chờ đăng nhập...</div>
+          </div>
+
+          <!-- Login history -->
+          <div id="oauth-history"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB: Direct ChatGPT Web Login -->
+    <section class="tab-content" id="tab-web-login">
+      <div class="workflow-grid">
+        <div class="control-stack">
+          <div class="control-card">
+            <div class="section-label">Danh sách tài khoản <span class="section-hint">email|password|2fa</span></div>
+            <textarea id="web-login-accounts-input" spellcheck="false" placeholder="email|password|2fa_secret&#10;user2@gmail.com|password123|&#10;# Mỗi dòng một tài khoản"></textarea>
+            <div class="field-label-row">
+              <label class="field-label" for="web-login-link-input">URL mở sau đăng nhập</label>
+              <label class="feature-toggle" for="web-login-link-toggle">
+                <input type="checkbox" id="web-login-link-toggle" checked aria-label="Bật hoặc tắt mở URL sau đăng nhập" />
+                <span class="toggle-track" aria-hidden="true"></span>
+                <span id="web-login-link-toggle-text">Bật</span>
+              </label>
+            </div>
+            <textarea id="web-login-link-input" rows="2" spellcheck="false" placeholder="https://chatgpt.com/api/auth/session">https://chatgpt.com/api/auth/session</textarea>
+            <div class="field-help" id="web-login-link-help">Sau khi đăng nhập, mở URL này trong tab phụ cùng browser.</div>
+          </div>
+          <div class="config-row">
+            <div class="config-item">
+              <label class="config-label">Cửa sổ song song</label>
+              <div class="config-input-row">
+                <input id="web-login-workers-input" type="number" min="1" step="1" value="3" inputmode="numeric" aria-label="Số cửa sổ ChatGPT Web" style="width:72px;padding:8px 10px;text-align:center;font-family:var(--mono);font-size:1.1rem;font-weight:700" />
+                <span class="config-hint">Chrome cùng lúc</span>
+              </div>
+            </div>
+            <div class="config-item config-item--check">
+              <input type="checkbox" id="web-auto-retry" checked disabled />
+              <div>
+                <label for="web-auto-retry" class="config-label">Tự động điền &amp; thử lại</label>
+                <span class="config-hint">Mật khẩu, 2FA · Không lưu session</span>
+              </div>
+            </div>
+          </div>
+          <div class="web-login-actions">
+            <button class="btn btn-primary" id="btn-web-login">Bắt đầu chạy</button>
+            <button class="btn btn-ghost" id="btn-web-pause" style="display:none">Tạm dừng</button>
+            <button class="btn btn-danger" id="btn-web-stop" style="display:none">Hủy phiên hiện tại</button>
+          </div>
+          <div class="msg" id="web-login-msg"></div>
+        </div>
+        <div class="results-stack">
+          <div class="stats" id="web-login-parse-stats">
+            <div class="stat"><div class="stat-val" id="web-parsed">0</div><div class="stat-label">Tổng tài khoản</div></div>
+            <div class="stat"><div class="stat-val green" id="web-done">0</div><div class="stat-label">Đã vào web</div></div>
+            <div class="stat"><div class="stat-val" id="web-2fa">0</div><div class="stat-label">Có 2FA</div></div>
+            <div class="stat"><div class="stat-val" id="web-fail">0</div><div class="stat-label">Lần thử lại</div></div>
+          </div>
+          <div class="progress-card" id="web-login-progress" style="display:none">
+            <div class="progress-head"><span>Tiến trình đăng nhập</span><strong id="web-login-progress-percent">0%</strong></div>
+            <div class="progress-track"><div id="web-login-progress-bar" style="width:0%"></div></div>
+            <div class="progress-meta"><span id="web-login-progress-text">Chưa bắt đầu</span><span id="web-login-active"></span></div>
+          </div>
+          <div class="panel table-card">
+            <div class="panel-head panel-head-row">
+              <div><h2>Kết quả phiên hiện tại</h2><p>Trạng thái từng browser được cập nhật theo thời gian thực.</p></div>
+              <button class="btn-compact" id="btn-web-rearrange" type="button" style="display:none">Sắp xếp lại tab</button>
+            </div>
+            <div class="panel-body"><div class="tbl-wrap"><table><thead><tr><th>#</th><th>Tài khoản</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody><tr><td colspan="4"><div id="web-login-history"><span class="empty-cell">Chưa có kết quả.</span></div></td></tr></tbody></table></div></div>
+          </div>
+          <div class="terminal-panel">
+            <div class="term-titlebar">
+              <div class="term-dots">
+                <span class="term-dot red"></span>
+                <span class="term-dot yellow"></span>
+                <span class="term-dot green"></span>
+              </div>
+              <span class="term-title">activity-log — live session</span>
+              <span class="term-live" id="term-live-indicator" style="display:none">
+                <span class="term-live-dot"></span>LIVE
+              </span>
+            </div>
+            <div class="activity-log" id="web-login-activity">
+              <span class="term-empty"><span class="term-prompt">$</span> Sẵn sàng nhận danh sách tài khoản...</span>
+            </div>
+          </div>
+          <div style="display:flex;justify-content:flex-end;padding-top:2px">
+          </div>
+        </div>
+      </div>
+    </section>
+
+        <footer class="workspace-footer">
+          <span>shoptaikhoan auto tool v1.2.0</span><span>Automation</span><span>Secure</span><span>Fast</span>
+          <span class="footer-spacer"></span><span>Local workspace · dữ liệu không rời máy</span>
+        </footer>
+      </div>
+    </div>
+  </main>
+
+  <!-- ============ HISTORY MODAL ============ -->
+  <div class="modal-overlay" id="history-modal" role="dialog" aria-modal="true" aria-label="Lịch sử tài khoản">
+    <div class="modal">
+      <div class="modal-header">
+        <div>
+          <h3>Lịch sử đăng nhập</h3>
+          <p>Lưu email, kết quả và thời gian &mdash; không lưu mật khẩu, 2FA hoặc session.</p>
+        </div>
+        <button class="modal-close" id="btn-modal-close" aria-label="Đóng">&times;</button>
+      </div>
+      <div class="modal-toolbar">
+        <span class="modal-count" id="history-modal-count">0 bản ghi</span>
+        <button class="btn-compact" id="btn-clear-web-history" type="button">Xóa lịch sử</button>
+      </div>
+      <div class="modal-body">
+        <div class="history-list" id="web-account-history"><span class="empty-cell">Chưa có lịch sử.</span></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" id="btn-modal-close-footer">Xóa &amp; Đóng</button>
+        <button class="btn btn-primary" onclick="document.getElementById('history-modal').classList.remove('open')">Xóng</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      'use strict';
+      const API = window.location.origin;
+      const $ = id => document.getElementById(id);
+      let serverOnline = false;
+
+      // === JWT decode ===
+      function b64d(s) { const n = s.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(s.length / 4) * 4, '='); return new TextDecoder().decode(Uint8Array.from(atob(n), c => c.charCodeAt(0))) }
+      function jwtP(t) { if (!t || typeof t !== 'string') return null; const p = t.split('.'); if (p.length < 2) return null; try { return JSON.parse(b64d(p[1])) } catch { return null } }
+      function esc(v) { return String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;') }
+      function fmtDate(v) { if (!v) return '-'; const d = new Date(v); if (isNaN(d)) return String(v); const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}` }
+
+      // === Health check ===
+      async function checkHealth() {
+        try {
+          const r = await fetch(API + '/api/health', { signal: AbortSignal.timeout(2000) });
+          const d = await r.json();
+          serverOnline = d.ok;
+        } catch { serverOnline = false }
+        const bar = $('status-bar'), txt = $('status-text');
+        bar.className = 'status-bar ' + (serverOnline ? 'online' : 'offline');
+        txt.textContent = serverOnline ? 'Server đang chạy — sẵn sàng import' : 'Server offline — chỉ có thể tải JSON';
+        $('btn-import').textContent = serverOnline ? '⚡ Import vào 9router' : '⚡ Import vào 9router (cần server)';
+      }
+      checkHealth();
+      setInterval(checkHealth, 5000);
+
+      // === Parse sessions ===
+      function parseSession(obj) {
+        const at = obj.accessToken || obj.access_token || obj.token?.accessToken || '';
+        if (!at) return null;
+        const p = jwtP(at);
+        const auth = p?.['https://api.openai.com/auth'] || {};
+        const prof = p?.['https://api.openai.com/profile'] || {};
+        const email = obj.user?.email || obj.email || prof.email || p?.email || null;
+        const accountId = obj.account?.id || obj.providerSpecificData?.chatgptAccountId || auth.chatgpt_account_id || crypto.randomUUID();
+        const planType = obj.account?.planType || obj.providerSpecificData?.chatgptPlanType || auth.chatgpt_plan_type || null;
+        const expiresAt = p?.exp ? new Date(p.exp * 1000).toISOString() : (obj.expires || obj.expiresAt || null);
+        const now = new Date().toISOString();
+        return {
+          accessToken: at,
+          refreshToken: obj.refreshToken || obj.refresh_token || '',
+          expiresAt,
+          idToken: obj.idToken || '',
+          testStatus: 'active',
+          expiresIn: expiresAt ? Math.max(0, Math.floor((new Date(expiresAt) - Date.now()) / 1000)) : 0,
+          providerSpecificData: { chatgptAccountId: accountId, chatgptPlanType: planType },
+          lastUsedAt: now, consecutiveUseCount: 0, backoffLevel: 0,
+          id: accountId, provider: 'codex', authType: 'oauth',
+          name: email || 'ChatGPT Account', email: email || '',
+          priority: 1, isActive: true, createdAt: now, updatedAt: now,
+          _plan: planType, _expires: expiresAt
+        };
+      }
+
+      function collectSessions(val) {
+        const found = [];
+        function walk(v) {
+          if (!v || typeof v !== 'object') return;
+          if (Array.isArray(v)) { v.forEach(walk); return }
+          const at = v.accessToken || v.access_token || v.token?.accessToken;
+          if (at) { const r = parseSession(v); if (r) found.push(r); return }
+          Object.values(v).forEach(walk);
+        }
+        walk(val);
+        return found;
+      }
+
+      // === Tab 1: Import Session ===
+      let parsed = [];
+      const input = $('session-input');
+
+      function processInput() {
+        const t = input.value.trim();
+        if (!t) { parsed = []; renderPreview(); return }
+        try {
+          const val = JSON.parse(t);
+          parsed = collectSessions(val);
+        } catch (e) { parsed = []; $('s-err').textContent = '1'; $('s-err').className = 'stat-val red' }
+        renderPreview();
+      }
+
+      function renderPreview() {
+        $('s-parsed').textContent = parsed.length;
+        $('s-skip').textContent = '0';
+        if (!parsed.length) $('s-err').textContent = '0';
+        const body = $('preview-body');
+        if (!parsed.length) {
+          body.innerHTML = '<tr><td colspan="4" class="empty-cell">Chưa có session.</td></tr>';
+          $('btn-import').disabled = true; $('btn-download').disabled = true;
+          return;
+        }
+        body.innerHTML = parsed.map((c, i) => `<tr><td>${i + 1}</td><td><div class="cell-clip" title="${esc(c.email)}">${esc(c.email || '-')}</div></td><td>${c._plan ? `<span class="tag tag-plus">${esc(c._plan)}</span>` : '-'}</td><td>${fmtDate(c._expires)}</td></tr>`).join('');
+        $('btn-import').disabled = !serverOnline;
+        $('btn-download').disabled = false;
+      }
+
+      input.addEventListener('input', processInput);
+      $('btn-clear').addEventListener('click', () => { input.value = ''; parsed = []; renderPreview(); hideMsg('import-msg') });
+
+      // Import button
+      $('btn-import').addEventListener('click', async () => {
+        if (!parsed.length || !serverOnline) return;
+        $('btn-import').disabled = true;
+        $('btn-import').textContent = 'Đang import...';
+        try {
+          const r = await fetch(API + '/api/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ connections: parsed }) });
+          const d = await r.json();
+          if (d.error) { showMsg('import-msg', d.error, 'err'); }
+          else { showMsg('import-msg', `✅ Import thành công! Thêm mới: ${d.inserted}, Ghi đè: ${d.replaced || 0}.`, 'ok'); }
+        } catch (e) { showMsg('import-msg', 'Lỗi kết nối server: ' + e.message, 'err') }
+        $('btn-import').disabled = false;
+        $('btn-import').textContent = '⚡ Import vào 9router';
+        loadAccounts();
+      });
+
+      // Download fallback
+      $('btn-download').addEventListener('click', () => {
+        if (!parsed.length) return;
+        const data = { settings: { cloudEnabled: false, tunnelEnabled: false, tunnelUrl: '', stickyRoundRobinLimit: 3, providerStrategies: {}, comboStrategy: 'fallback', requireLogin: false, rtkEnabled: true }, providerConnections: parsed.map((c, i) => { const o = { ...c }; delete o._plan; delete o._expires; o.priority = i + 1; return o }) };
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+        const email = parsed[0]?.email || 'session';
+        a.download = email.replace(/[^a-z0-9@._-]/gi, '') + '.9router.json';
+        a.click(); URL.revokeObjectURL(a.href);
+      });
+
+      // === Tab 2: Accounts ===
+      async function loadAccounts() {
+        if (!serverOnline) { $('acc-body').innerHTML = '<tr><td colspan="6" class="empty-cell">Server offline</td></tr>'; $('acc-count').textContent = ''; return }
+        try {
+          const r = await fetch(API + '/api/connections');
+          const d = await r.json();
+          const conns = d.connections || [];
+          $('acc-count').textContent = conns.length + ' tài khoản';
+          if (!conns.length) { $('acc-body').innerHTML = '<tr><td colspan="6" class="empty-cell">Chưa có tài khoản nào.</td></tr>'; return }
+          $('acc-body').innerHTML = conns.map((c, i) => {
+            const data = c.data || {};
+            const plan = data.providerSpecificData?.chatgptPlanType || '';
+            const exp = data.expiresAt || '';
+            const status = data.testStatus || 'unknown';
+            const stCls = status === 'active' ? 'green' : status === 'error' ? 'red' : '';
+            return `<tr><td>${c.priority || i + 1}</td><td><div class="cell-clip" title="${esc(c.email)}">${esc(c.email || c.name || '-')}</div></td><td>${plan ? `<span class="tag tag-plus">${esc(plan)}</span>` : '-'}</td><td>${fmtDate(exp)}</td><td><span style="color:var(--${stCls || 'muted'})">${esc(status)}</span></td><td><button class="del-btn" onclick="delConn('${esc(c.id)}')">✕</button></td></tr>`
+          }).join('');
+        } catch { $('acc-body').innerHTML = '<tr><td colspan="6" class="empty-cell">Lỗi kết nối</td></tr>' }
+      }
+
+      window.delConn = async function (id) {
+        if (!confirm('Xóa tài khoản này?')) return;
+        try { await fetch(API + '/api/connections/' + id, { method: 'DELETE' }); loadAccounts() } catch { }
+      };
+
+      $('btn-refresh').addEventListener('click', loadAccounts);
+
+      // === Tab 3: Multi-file import ===
+      // Each entry: { conn, source: filename, type: 'session'|'backup' }
+      let fileEntries = [];
+      let fileNames = [];
+      let fileErrors = 0;
+      const dropZone = $('drop-zone');
+      const fileInput = $('file-input');
+
+      function parseFileContent(raw, fileName) {
+        const results = [];
+
+        // Type 1: 9router backup (has providerConnections array)
+        if (raw.providerConnections && Array.isArray(raw.providerConnections)) {
+          const codex = raw.providerConnections.filter(c => c.provider === 'codex');
+          codex.forEach(c => results.push({ conn: c, source: fileName, type: 'backup' }));
+          return results;
+        }
+
+        // Type 2: Array of connections
+        if (Array.isArray(raw)) {
+          const codex = raw.filter(c => c.provider === 'codex');
+          codex.forEach(c => results.push({ conn: c, source: fileName, type: 'backup' }));
+          if (codex.length) return results;
+          // Try as array of sessions
+          raw.forEach(item => {
+            const s = parseSession(item);
+            if (s) results.push({ conn: s, source: fileName, type: 'session' });
+          });
+          return results;
+        }
+
+        // Type 3: Single codex connection
+        if (raw.provider === 'codex' && raw.accessToken) {
+          results.push({ conn: raw, source: fileName, type: 'backup' });
+          return results;
+        }
+
+        // Type 4: ChatGPT session JSON (has user.email + accessToken)
+        if (raw.accessToken || raw.access_token) {
+          const s = parseSession(raw);
+          if (s) results.push({ conn: s, source: fileName, type: 'session' });
+          return results;
+        }
+
+        // Type 5: Walk nested objects
+        const sessions = collectSessions(raw);
+        sessions.forEach(s => results.push({ conn: s, source: fileName, type: 'session' }));
+        return results;
+      }
+
+      function handleFiles(files) {
+        const promises = Array.from(files).map(file => new Promise(resolve => {
+          const reader = new FileReader();
+          reader.onload = e => {
+            try {
+              const raw = JSON.parse(e.target.result);
+              const results = parseFileContent(raw, file.name);
+              if (results.length) {
+                fileNames.push({ name: file.name, count: results.length, type: results[0].type });
+                fileEntries.push(...results);
+              } else {
+                fileNames.push({ name: file.name, count: 0, type: 'error' });
+                fileErrors++;
+              }
+            } catch (err) {
+              fileNames.push({ name: file.name, count: 0, type: 'error', error: err.message });
+              fileErrors++;
+            }
+            resolve();
+          };
+          reader.readAsText(file);
+        }));
+        Promise.all(promises).then(() => {
+          renderFileImport();
+        });
+      }
+
+      function renderFileImport() {
+        // Stats
+        const statsEl = $('file-stats');
+        statsEl.style.display = fileEntries.length || fileErrors ? 'grid' : 'none';
+        $('fs-files').textContent = fileNames.length;
+        $('fs-total').textContent = fileEntries.length;
+        $('fs-err').textContent = fileErrors;
+        $('fs-err').className = 'stat-val' + (fileErrors ? ' red' : '');
+
+        // File list
+        const listEl = $('file-list');
+        if (fileNames.length) {
+          listEl.innerHTML = fileNames.map(f => {
+            const icon = f.type === 'error' ? '❌' : f.type === 'session' ? '🔑' : '📦';
+            const cls = f.type === 'error' ? 'color:var(--red)' : 'color:var(--green)';
+            const label = f.type === 'session' ? 'session' : f.type === 'backup' ? 'backup' : 'lỗi';
+            const detail = f.type === 'error' ? (f.error || 'Không tìm thấy account') : `${f.count} account`;
+            return `<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--surface2);border-radius:6px;margin-bottom:4px;font-size:.82rem">
+              <span>${icon}</span>
+              <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(f.name)}">${esc(f.name)}</span>
+              <span class="tag ${f.type === 'session' ? 'tag-new' : f.type === 'backup' ? 'tag-exist' : ''}" style="font-size:.7rem">${label}</span>
+              <span style="${cls};font-weight:600;font-size:.78rem">${detail}</span>
+            </div>`;
+          }).join('');
+        } else {
+          listEl.innerHTML = '';
+        }
+
+        // Table
+        const body = $('file-body');
+        if (!fileEntries.length) {
+          body.innerHTML = '<tr><td colspan="5" class="empty-cell">Chưa chọn file.</td></tr>';
+          $('btn-file-import').disabled = true;
+          $('btn-file-clear').style.display = 'none';
+          dropZone.textContent = '📂 Kéo thả hoặc click để chọn file JSON (chọn nhiều file)';
+          dropZone.style.borderColor = '';
+          return;
+        }
+
+        // Dedup by email (keep latest)
+        const seen = new Map();
+        fileEntries.forEach((e, i) => {
+          const key = (e.conn.email || '').toLowerCase().trim();
+          if (key) seen.set(key, i);
+          else seen.set('__no_email_' + i, i);
+        });
+        const uniqueIndices = [...seen.values()].sort((a, b) => a - b);
+
+        body.innerHTML = uniqueIndices.map((idx, i) => {
+          const e = fileEntries[idx];
+          const c = e.conn;
+          const plan = c.providerSpecificData?.chatgptPlanType || c._plan || '';
+          const exp = c.expiresAt || c._expires || '';
+          const srcShort = e.source.length > 20 ? e.source.slice(0, 18) + '…' : e.source;
+          const typeIcon = e.type === 'session' ? '🔑' : '📦';
+          return `<tr><td>${i + 1}</td><td><div class="cell-clip" title="${esc(c.email)}">${esc(c.email || c.name || '-')}</div></td><td>${plan ? `<span class="tag tag-plus">${esc(plan)}</span>` : '-'}</td><td>${fmtDate(exp)}</td><td><span title="${esc(e.source)}" style="font-size:.75rem">${typeIcon} ${esc(srcShort)}</span></td></tr>`;
+        }).join('');
+
+        dropZone.textContent = `✅ ${fileNames.length} file — ${fileEntries.length} accounts (${uniqueIndices.length} unique)`;
+        dropZone.style.borderColor = 'var(--green)';
+        $('btn-file-import').disabled = !serverOnline;
+        $('btn-file-clear').style.display = '';
+      }
+
+      // Event listeners
+      dropZone.addEventListener('click', () => fileInput.click());
+      dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag') });
+      dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag'));
+      dropZone.addEventListener('drop', e => { e.preventDefault(); dropZone.classList.remove('drag'); if (e.dataTransfer.files.length) handleFiles(e.dataTransfer.files) });
+      fileInput.addEventListener('change', e => { if (e.target.files.length) handleFiles(e.target.files); e.target.value = '' });
+      $('btn-file-add').addEventListener('click', () => fileInput.click());
+      $('btn-file-clear').addEventListener('click', () => {
+        fileEntries = []; fileNames = []; fileErrors = 0;
+        renderFileImport();
+        hideMsg('file-msg');
+      });
+
+      $('btn-file-import').addEventListener('click', async () => {
+        if (!fileEntries.length || !serverOnline) return;
+
+        // Dedup
+        const seen = new Map();
+        fileEntries.forEach((e, i) => {
+          const key = (e.conn.email || '').toLowerCase().trim();
+          if (key) seen.set(key, i);
+          else seen.set('__no_email_' + i, i);
+        });
+        const uniqueConns = [...seen.values()].map(i => fileEntries[i].conn);
+
+        $('btn-file-import').disabled = true;
+        $('btn-file-import').textContent = `Đang import ${uniqueConns.length} accounts...`;
+        try {
+          const r = await fetch(API + '/api/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ connections: uniqueConns }) });
+          const d = await r.json();
+          if (d.error) showMsg('file-msg', d.error, 'err');
+          else showMsg('file-msg', `✅ Import thành công! Thêm mới: ${d.inserted}, Ghi đè: ${d.replaced || 0}. Tổng: ${d.total || (d.inserted + (d.replaced || 0))}.`, 'ok');
+        } catch (e) { showMsg('file-msg', 'Lỗi: ' + e.message, 'err') }
+        $('btn-file-import').disabled = false;
+        $('btn-file-import').textContent = '⚡ Import tất cả vào 9router';
+        loadAccounts();
+      });
+
+      // === Tab 4: OAuth Login ===
+      let oauthHistory = [];
+      let oauthPolling = null;
+      let autoPolling = null;
+      let autoStartAt = null;
+      let autoTimer = null;
+      let currentAccountStart = null;
+      let lastCurrentEmail = null;
+
+      function formatDuration(ms) {
+        const total = Math.max(0, Math.floor(ms / 1000));
+        const h = Math.floor(total / 3600);
+        const m = Math.floor((total % 3600) / 60);
+        const s = total % 60;
+        const pad = n => String(n).padStart(2, '0');
+        return h > 0 ? `${pad(h)}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
+      }
+
+      function startAutoTimer() {
+        autoStartAt = Date.now();
+        currentAccountStart = Date.now();
+        const el = $('oauth-elapsed');
+        el.style.display = 'block';
+        el.innerHTML = '⏱ Tổng: <span id="timer-total">00:00</span> | Acc: <span id="timer-acc">00:00</span>';
+        if (autoTimer) clearInterval(autoTimer);
+        autoTimer = setInterval(() => {
+          const totalEl = document.getElementById('timer-total');
+          const accEl = document.getElementById('timer-acc');
+          if (totalEl) totalEl.textContent = formatDuration(Date.now() - autoStartAt);
+          if (accEl && currentAccountStart) accEl.textContent = formatDuration(Date.now() - currentAccountStart);
+        }, 500);
+      }
+
+      function stopAutoTimer(finalLabel = 'Hoàn thành sau') {
+        const elapsed = autoStartAt ? formatDuration(Date.now() - autoStartAt) : '00:00';
+        if (autoTimer) clearInterval(autoTimer);
+        autoTimer = null;
+        $('oauth-elapsed').style.display = 'block';
+        $('oauth-elapsed').innerHTML = `⏱ ${finalLabel}: ${elapsed}`;
+        return elapsed;
+      }
+
+      // Mode switching
+      document.querySelectorAll('.oauth-tab').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.oauth-tab').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          $('oauth-auto-section').style.display = btn.dataset.mode === 'auto' ? '' : 'none';
+          $('oauth-manual-section').style.display = btn.dataset.mode === 'manual' ? '' : 'none';
+        });
+      });
+
+      // Normalize account lines: auto-detect tab / comma / semicolon / multi-space
+      // separators and convert to pipe format  email|password|2fa
+      function normalizeAccountLine(line) {
+        line = line.trim();
+        if (!line || line.startsWith('#')) return line;
+        // Already pipe-separated?
+        if (line.includes('|')) return line;
+        // Try tab
+        if (line.includes('\t')) return line.split('\t').map(s => s.trim()).join('|');
+        // Try semicolon
+        if (line.includes(';')) return line.split(';').map(s => s.trim()).join('|');
+        // Try comma (but only if there's no @ after a comma — avoid splitting emails)
+        if (line.includes(',')) {
+          const parts = line.split(',').map(s => s.trim());
+          if (parts.length >= 2 && parts[0].includes('@')) return parts.join('|');
+        }
+        // Try 2+ spaces
+        if (/\s{2,}/.test(line)) return line.split(/\s{2,}/).map(s => s.trim()).join('|');
+        return line;
+      }
+
+      function normalizeAllLines(text) {
+        return text.split('\n').map(normalizeAccountLine).join('\n');
+      }
+
+      // Parse accounts textarea
+      function parseAccounts() {
+        const text = $('oauth-accounts-input').value.trim();
+        if (!text) return [];
+        return text.split('\n')
+          .map(normalizeAccountLine)
+          .filter(l => l && !l.startsWith('#'))
+          .map(l => {
+            const parts = l.split('|');
+            return { email: parts[0]?.trim() || '', password: parts[1]?.trim() || '', totp: parts[2]?.trim() || '', raw: parts.join('|') };
+          })
+          .filter(a => a.email && a.password);
+      }
+
+      // Auto-format on paste: convert tabs/commas/etc to pipes visually
+      $('oauth-accounts-input').addEventListener('paste', (e) => {
+        setTimeout(() => {
+          const ta = $('oauth-accounts-input');
+          const normalized = normalizeAllLines(ta.value);
+          if (normalized !== ta.value) {
+            ta.value = normalized;
+          }
+          ta.dispatchEvent(new Event('input'));
+        }, 50);
+      });
+
+      $('oauth-accounts-input').addEventListener('input', () => {
+        const accs = parseAccounts();
+        const stats = $('oauth-parse-stats');
+        if (accs.length) {
+          stats.style.display = 'grid';
+          $('oa-parsed').textContent = accs.length;
+          $('oa-2fa').textContent = accs.filter(a => a.totp).length;
+        } else {
+          stats.style.display = 'none';
+        }
+      });
+
+      // Auto login button
+      $('btn-auto-login').addEventListener('click', async () => {
+        const accs = parseAccounts();
+        if (!accs.length) { showMsg('oauth-msg', 'Chưa nhập tài khoản!', 'err'); return }
+        if (!serverOnline) { showMsg('oauth-msg', 'Server offline!', 'err'); return }
+
+          $('btn-auto-login').disabled = true;
+        $('btn-auto-login').textContent = '⏳ Đang khởi động...';
+        $('btn-auto-stop').style.display = '';
+        hideMsg('oauth-msg');
+        $('oauth-progress').style.display = 'block';
+        $('oauth-progress-bar').style.width = '0%';
+        $('oauth-progress-text').textContent = `0/${accs.length} — Đang khởi động...`;
+        startAutoTimer();
+        currentAccountStart = Date.now();
+        lastCurrentEmail = null;
+
+        try {
+          const runHeadless = $('oauth-headless-toggle').checked;
+          const workers = Number.parseInt($('oauth-workers-input').value, 10);
+          if (!Number.isInteger(workers) || workers < 1) {
+            throw new Error('Số luồng phải là số nguyên lớn hơn 0');
+          }
+          const notice = workers > accs.length
+            ? ` | yêu cầu ${workers} luồng, thực tế ${accs.length}`
+            : ` | ${workers} luồng song song`;
+          $('oauth-progress-text').textContent = `0/${accs.length} — Đang khởi động${notice}...`;
+          const r = await fetch(API + '/api/oauth/auto-login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              accounts: accs.map(a => a.raw),
+              headless: runHeadless,
+              workers,
+            })
+          });
+          const d = await r.json();
+          if (d.error) {
+            showMsg('oauth-msg', '❌ ' + d.error, 'err');
+            stopAutoTimer('Dừng sau');
+            $('btn-auto-login').disabled = false;
+            $('btn-auto-login').textContent = '🚀 Auto Login tất cả';
+            $('btn-auto-stop').style.display = 'none';
+            return;
+          }
+          // Start polling status
+          startAutoPolling(accs.length);
+        } catch (e) {
+          showMsg('oauth-msg', 'Lỗi: ' + e.message, 'err');
+          stopAutoTimer('Lỗi sau');
+          $('btn-auto-login').disabled = false;
+          $('btn-auto-login').textContent = '🚀 Auto Login tất cả';
+          $('btn-auto-stop').style.display = 'none';
+        }
+      });
+
+      $('btn-auto-stop').addEventListener('click', async () => {
+        if (!serverOnline) return;
+        $('btn-auto-stop').disabled = true;
+        $('btn-auto-stop').textContent = '⏳ Đang dừng...';
+        try {
+          const r = await fetch(API + '/api/oauth/auto-stop', { method: 'POST' });
+          const d = await r.json();
+          if (autoPolling) { clearInterval(autoPolling); autoPolling = null; }
+          $('btn-auto-login').disabled = false;
+          $('btn-auto-login').textContent = '🚀 Auto Login tất cả';
+          $('btn-auto-stop').style.display = 'none';
+          $('btn-auto-stop').disabled = false;
+          $('btn-auto-stop').textContent = '⏹ Dừng';
+          stopAutoTimer('Đã dừng sau');
+          $('oauth-progress-text').textContent = d.killed ? '⏹ Đã dừng auto login và tắt Chrome nền' : '⏹ Đã gửi lệnh dừng';
+          showMsg('oauth-msg', d.killed ? '⏹ Đã dừng auto login và tắt Chrome nền.' : '⏹ Đã dừng auto login.', 'err');
+        } catch (e) {
+          $('btn-auto-stop').disabled = false;
+          $('btn-auto-stop').textContent = '⏹ Dừng';
+          showMsg('oauth-msg', 'Lỗi khi dừng: ' + e.message, 'err');
+        }
+      });
+
+      function startAutoPolling(total) {
+        if (autoPolling) clearInterval(autoPolling);
+        autoPolling = setInterval(async () => {
+          try {
+            const r = await fetch(API + '/api/oauth/auto-status');
+            const d = await r.json();
+
+            const done = (d.done || 0) + (d.failed || 0);
+            const pct = total > 0 ? Math.round(done / total * 100) : 0;
+            $('oauth-progress-bar').style.width = pct + '%';
+            const totalElapsed = autoStartAt ? formatDuration(Date.now() - autoStartAt) : '00:00';
+            const accElapsed = currentAccountStart ? formatDuration(Date.now() - currentAccountStart) : '00:00';
+            const mode = d.mode ? ` — ${d.mode}` : '';
+            const workerInfo = d.workersRunning ? ` | ${d.workersRunning}/${d.workersRequested || d.workersRunning} luồng` : '';
+            $('oauth-progress-text').textContent = `${done}/${total} — ⏱ ${totalElapsed}${mode}${workerInfo}`;
+            const active = Array.isArray(d.activeAccounts) ? d.activeAccounts : [];
+            const activeEl = $('oauth-active-workers');
+            activeEl.style.display = active.length ? 'block' : 'none';
+            activeEl.textContent = active.length ? `⚡ Đang chạy (${active.length}): ${active.join(' • ')}` : '';
+
+            $('oa-done').textContent = d.done || 0;
+            $('oa-fail').textContent = d.failed || 0;
+            $('oa-fail').className = 'stat-val' + ((d.failed || 0) > 0 ? ' red' : '');
+
+            // Track when current account changes
+            if (d.currentEmail && d.currentEmail !== lastCurrentEmail) {
+              lastCurrentEmail = d.currentEmail;
+              currentAccountStart = Date.now();
+              // Pre-insert with _startedAt so we can calculate duration later
+              const existIdx = oauthHistory.findIndex(x => x.email === d.currentEmail);
+              if (existIdx < 0) {
+                oauthHistory.push({ email: d.currentEmail, _startedAt: Date.now(), status: 'pending' });
+              } else if (!oauthHistory[existIdx]._startedAt) {
+                oauthHistory[existIdx]._startedAt = Date.now();
+              }
+            }
+
+            // Update history from results. Upsert by email so each account shows
+            // once with its latest/final status instead of duplicated summary rows.
+            if (d.results && d.results.length) {
+              let changed = false;
+              for (const r of d.results) {
+                if (!r.email) continue;
+                // Calculate per-account duration
+                let accDuration = '';
+                const existing = oauthHistory.find(x => x.email === r.email);
+                if (existing && existing._startedAt) {
+                  accDuration = formatDuration(Date.now() - existing._startedAt);
+                } else if (currentAccountStart) {
+                  accDuration = formatDuration(Date.now() - currentAccountStart);
+                }
+                const item = {
+                  email: r.email,
+                  plan: r.plan || '',
+                  time: new Date().toLocaleTimeString(),
+                  duration: accDuration,
+                  hasRefresh: r.hasRefresh || false,
+                  status: r.status,
+                  error: r.error || '',
+                };
+                const idx = oauthHistory.findIndex(x => x.email === r.email);
+                if (idx >= 0) oauthHistory[idx] = { ...oauthHistory[idx], ...item };
+                else oauthHistory.push(item);
+                changed = true;
+              }
+              if (changed) renderOAuthHistory();
+            }
+
+            if (!d.running) {
+              clearInterval(autoPolling);
+              autoPolling = null;
+              $('btn-auto-login').disabled = false;
+              $('btn-auto-login').textContent = '🚀 Auto Login tất cả';
+              $('btn-auto-stop').style.display = 'none';
+              const elapsed = stopAutoTimer(d.stopped ? 'Đã dừng sau' : 'Hoàn thành sau');
+              if (d.stopped) {
+                $('oauth-progress-text').textContent = `⏹ Đã dừng — ${elapsed}`;
+                showMsg('oauth-msg', `⏹ Đã dừng auto login — thời gian: ${elapsed}`, 'err');
+              } else {
+                $('oauth-progress-text').textContent = `✅ Hoàn thành! ${d.done || 0} thành công, ${d.failed || 0} lỗi — ${elapsed}`;
+                showMsg('oauth-msg', `✅ Hoàn thành! ${d.done || 0} thành công, ${d.failed || 0} lỗi — thời gian: ${elapsed}`, 'ok');
+              }
+              loadAccounts();
+            }
+          } catch {}
+        }, 500);
+      }
+
+      // Manual login
+      $('btn-oauth-login').addEventListener('click', async () => {
+        if (!serverOnline) { showMsg('oauth-msg', 'Server offline!', 'err'); return }
+
+        $('btn-oauth-login').disabled = true;
+        $('btn-oauth-login').textContent = '⏳ Đang mở trình duyệt...';
+        hideMsg('oauth-msg');
+
+        // Show status box
+        const box = $('oauth-status-box');
+        box.style.display = 'block';
+        $('oauth-status-icon').textContent = '⏳';
+        $('oauth-status-text').textContent = 'Đang mở trang đăng nhập OpenAI...';
+
+        try {
+          const r = await fetch(API + '/api/oauth/start', { method: 'POST' });
+          const d = await r.json();
+          if (d.error) {
+            showMsg('oauth-msg', '❌ ' + d.error, 'err');
+            resetOAuthBtn();
+            box.style.display = 'none';
+            return;
+          }
+
+          $('oauth-status-icon').textContent = '🔑';
+          $('oauth-status-text').innerHTML = 'Đang chờ đăng nhập trên trình duyệt...<br><span style="color:var(--muted);font-size:.8rem">Sau khi login xong, kết quả sẽ tự động hiện ở đây</span>';
+
+          // Poll for result
+          startOAuthPolling();
+        } catch (e) {
+          showMsg('oauth-msg', 'Lỗi: ' + e.message, 'err');
+          resetOAuthBtn();
+          box.style.display = 'none';
+        }
+      });
+
+      function resetOAuthBtn() {
+        $('btn-oauth-login').disabled = false;
+        $('btn-oauth-login').textContent = '🚀 Login ChatGPT (OAuth)';
+      }
+
+      function startOAuthPolling() {
+        if (oauthPolling) clearInterval(oauthPolling);
+        let polls = 0;
+        oauthPolling = setInterval(async () => {
+          polls++;
+          if (polls > 120) { // 2 minutes
+            clearInterval(oauthPolling);
+            oauthPolling = null;
+            $('oauth-status-icon').textContent = '⏰';
+            $('oauth-status-text').textContent = 'Timeout — hết thời gian chờ đăng nhập.';
+            showMsg('oauth-msg', '⏰ Timeout. Bấm Login lại để thử.', 'err');
+            resetOAuthBtn();
+            return;
+          }
+
+          try {
+            const r = await fetch(API + '/api/oauth/status');
+            const d = await r.json();
+
+            if (d.status === 'success') {
+              clearInterval(oauthPolling);
+              oauthPolling = null;
+              $('oauth-status-icon').textContent = '✅';
+              $('oauth-status-text').innerHTML = `<strong style="color:var(--green)">${esc(d.email)}</strong> — ${esc(d.plan || 'free')}<br>Refresh token: ${d.hasRefresh ? '✅ Có' : '❌ Không'}<br>Thêm mới: ${d.inserted}, Ghi đè: ${d.replaced || 0}`;
+              showMsg('oauth-msg', `✅ Login thành công! ${esc(d.email)}`, 'ok');
+
+              // Add to history
+              oauthHistory.unshift({ email: d.email, plan: d.plan, time: new Date().toLocaleTimeString(), hasRefresh: d.hasRefresh });
+              renderOAuthHistory();
+              resetOAuthBtn();
+              loadAccounts();
+            } else if (d.status === 'error') {
+              clearInterval(oauthPolling);
+              oauthPolling = null;
+              $('oauth-status-icon').textContent = '❌';
+              $('oauth-status-text').textContent = d.error || 'Login thất bại';
+              showMsg('oauth-msg', '❌ ' + (d.error || 'Login thất bại'), 'err');
+              resetOAuthBtn();
+            }
+            // else: still waiting, continue polling
+          } catch {}
+        }, 1000);
+      }
+
+      function renderOAuthHistory() {
+        const el = $('oauth-history');
+        const visible = oauthHistory.filter(h => h.status && h.status !== 'pending');
+        if (!visible.length) { el.innerHTML = ''; return }
+        el.innerHTML = '<div style="font-size:.82rem;color:var(--muted);margin-bottom:6px">Lịch sử login phiên này:</div>' +
+          visible.map(h => {
+            const isErr = h.status === 'error';
+            const icon = isErr ? '❌' : '✅';
+            const detail = isErr ? `<span style="color:var(--red);font-size:.7rem">${esc(h.error || 'failed')}</span>` :
+              `<span class="tag tag-plus" style="font-size:.7rem">${esc(h.plan || 'free')}</span>
+               <span style="font-size:.7rem;color:var(--muted)">${h.hasRefresh ? '🔑 rt' : '⚠️ no rt'}</span>`;
+            return `<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--surface2);border-radius:6px;margin-bottom:4px;font-size:.82rem">
+              <span>${icon}</span>
+              <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(h.email)}</span>
+              ${detail}
+              <span style="color:var(--muted);font-size:.75rem">${h.duration ? '⏱ ' + h.duration : h.time}</span>
+            </div>`;
+          }).join('');
+      }
+
+      // === Direct ChatGPT Web Login (no OAuth/session/import) ===
+      let webLoginPolling = null;
+      let webLoginHistory = [];
+      let webAccountHistory = [];
+      let webLoginRunId = '';
+      let webLoginPaused = false;
+      let webBrowserControlsAvailable = false;
+      const WEB_LOGIN_LINK_ENABLED_KEY = 'shoptaikhoan.webLoginLinkEnabled';
+      let webLinkEnabled = true;
+
+      function syncWebLoginLinkToggle(persist = false) {
+        const toggle = $('web-login-link-toggle');
+        const input = $('web-login-link-input');
+        webLinkEnabled = Boolean(toggle.checked);
+        input.disabled = !webLinkEnabled;
+        input.setAttribute('aria-disabled', String(!webLinkEnabled));
+        $('web-login-link-toggle-text').textContent = webLinkEnabled ? 'Bật' : 'Tắt';
+        $('web-login-link-help').textContent = webLinkEnabled
+          ? 'Sau khi đăng nhập, mở URL này trong tab phụ cùng browser.'
+          : 'Đang tắt — chỉ mở ChatGPT, không tạo tab phụ.';
+        if (!webLinkEnabled) hideMsg('web-login-msg');
+        if (persist) {
+          try { localStorage.setItem(WEB_LOGIN_LINK_ENABLED_KEY, String(webLinkEnabled)); } catch {}
+        }
+      }
+
+      try {
+        webLinkEnabled = localStorage.getItem(WEB_LOGIN_LINK_ENABLED_KEY) !== 'false';
+      } catch {}
+      $('web-login-link-toggle').checked = webLinkEnabled;
+      syncWebLoginLinkToggle();
+      $('web-login-link-toggle').addEventListener('change', () => syncWebLoginLinkToggle(true));
+
+      function parseWebLoginAccounts() {
+        const text = $('web-login-accounts-input').value.trim();
+        if (!text) return [];
+        return text.split('\n')
+          .map(normalizeAccountLine)
+          .filter(line => line && !line.startsWith('#'))
+          .map(line => {
+            const parts = line.split('|');
+            return { email: parts[0]?.trim() || '', password: parts[1]?.trim() || '', totp: parts[2]?.trim() || '', raw: parts.join('|') };
+          })
+          .filter(account => account.email && account.password);
+      }
+
+      function showWebLoginCancelState(message) {
+        $('btn-web-login').disabled = true;
+        $('btn-web-login').textContent = 'Đang có phiên Chrome';
+        $('btn-web-pause').style.display = 'none';
+        $('btn-web-stop').style.display = '';
+        $('btn-web-stop').disabled = false;
+        $('btn-web-stop').textContent = 'Hủy phiên hiện tại';
+        showMsg('web-login-msg', message || 'Đang có một phiên web-login. Hãy hủy phiên cũ trước khi chạy lại.', 'err');
+      }
+
+      function resetWebLoginUi(message, preserveRunData = false) {
+        if (!preserveRunData) {
+          webLoginHistory = [];
+          webLoginRunId = '';
+          renderWebLoginHistory();
+          $('web-done').textContent = '0';
+          $('web-fail').textContent = '0';
+          $('web-fail').className = 'stat-val';
+          $('web-login-progress-bar').style.width = '0%';
+          $('web-login-progress-percent').textContent = '0%';
+          $('web-login-progress-text').textContent = 'Chưa bắt đầu';
+          $('web-login-active').textContent = '';
+          $('web-login-active').style.display = 'none';
+          $('web-login-progress').style.display = 'none';
+          renderWebLoginActivity([]);
+        }
+        webLoginPaused = false;
+        webBrowserControlsAvailable = false;
+        $('btn-web-login').disabled = false;
+        $('btn-web-login').textContent = 'Bắt đầu chạy';
+        $('btn-web-pause').style.display = 'none';
+        $('btn-web-pause').disabled = false;
+        $('btn-web-pause').textContent = 'Tạm dừng';
+        $('btn-web-stop').style.display = 'none';
+        $('btn-web-stop').disabled = false;
+        $('btn-web-stop').textContent = 'Hủy phiên hiện tại';
+        $('btn-web-rearrange').style.display = 'none';
+        $('btn-web-rearrange').disabled = false;
+        if (message) showMsg('web-login-msg', message, 'ok');
+        else hideMsg('web-login-msg');
+      }
+
+      $('web-login-accounts-input').addEventListener('paste', () => {
+        setTimeout(() => {
+          const input = $('web-login-accounts-input');
+          input.value = normalizeAllLines(input.value);
+          input.dispatchEvent(new Event('input'));
+        }, 50);
+      });
+
+      $('web-login-accounts-input').addEventListener('input', () => {
+        const accounts = parseWebLoginAccounts();
+        $('web-login-parse-stats').style.display = accounts.length ? 'grid' : 'none';
+        $('web-parsed').textContent = accounts.length;
+        $('web-2fa').textContent = accounts.filter(account => account.totp).length;
+      });
+
+      $('btn-web-login').addEventListener('click', async () => {
+        const accounts = parseWebLoginAccounts();
+        if (!accounts.length) { showMsg('web-login-msg', 'Chưa nhập tài khoản hợp lệ!', 'err'); return }
+        if (!serverOnline) { showMsg('web-login-msg', 'Server offline!', 'err'); return }
+        const workers = Number.parseInt($('web-login-workers-input').value, 10);
+        if (!Number.isInteger(workers) || workers < 1) { showMsg('web-login-msg', 'Số cửa sổ phải là số nguyên lớn hơn 0.', 'err'); return }
+        const linkSettings = {
+          openLinkEnabled: webLinkEnabled,
+          linkUrl: webLinkEnabled ? $('web-login-link-input').value.trim() : '',
+        };
+        if (linkSettings.openLinkEnabled && linkSettings.linkUrl) {
+          try {
+            const parsed = new URL(linkSettings.linkUrl);
+            if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error();
+          } catch { showMsg('web-login-msg', 'Link phải bắt đầu bằng http:// hoặc https://.', 'err'); return }
+        }
+        $('btn-web-login').disabled = true;
+        $('btn-web-login').textContent = '⏳ Đang mở Chrome...';
+        $('btn-web-pause').style.display = '';
+        $('btn-web-pause').textContent = 'Tạm dừng';
+        $('btn-web-stop').style.display = '';
+        $('btn-web-rearrange').style.display = 'none';
+        $('web-login-progress').style.display = 'block';
+        $('web-login-progress-bar').style.width = '0%';
+        $('web-login-progress-text').textContent = `0/${accounts.length} — Đang khởi động...`;
+        renderWebLoginActivity([{
+          time: new Date().toISOString(),
+          level: 'info',
+          email: '',
+          message: `Đang gửi ${accounts.length} tài khoản tới hàng đợi`,
+        }]);
+        hideMsg('web-login-msg');
+        try {
+          const response = await fetch(API + '/api/web-login/start', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ accounts: accounts.map(account => account.raw), workers, ...linkSettings }),
+          });
+          const data = await response.json();
+          if (response.status === 409) {
+            showWebLoginCancelState('Đang có phiên ChatGPT Web từ lần chạy trước. Hãy hủy phiên hiện tại rồi chạy lại.');
+            return;
+          }
+          if (!response.ok || data.error) throw new Error(data.error || 'Không thể khởi động');
+          webLoginHistory = [];
+          renderWebLoginHistory();
+          webLoginRunId = data.runId || '';
+          startWebLoginPolling(accounts.length, webLoginRunId);
+        } catch (error) {
+          $('btn-web-login').disabled = false;
+          $('btn-web-login').textContent = 'Bắt đầu chạy';
+          $('btn-web-pause').style.display = 'none';
+          $('btn-web-stop').style.display = 'none';
+          showMsg('web-login-msg', '❌ ' + error.message, 'err');
+        }
+      });
+
+      $('btn-web-stop').addEventListener('click', async () => {
+        $('btn-web-stop').disabled = true;
+        try {
+          await fetch(API + '/api/web-login/stop', { method: 'POST' });
+          if (webLoginPolling) clearInterval(webLoginPolling);
+          webLoginPolling = null;
+          const statusResponse = await fetch(API + '/api/web-login/status');
+          const status = await statusResponse.json();
+          webLoginHistory = Array.isArray(status.results) ? status.results : webLoginHistory;
+          renderWebLoginHistory();
+          renderWebLoginActivity(Array.isArray(status.logs) ? status.logs : []);
+          resetWebLoginUi('Đã hủy phiên và giữ lại log/kết quả. Bạn có thể chạy lại từ đầu.', true);
+        } finally {
+          $('btn-web-stop').disabled = false;
+        }
+      });
+
+      $('btn-web-pause').addEventListener('click', async () => {
+        const button = $('btn-web-pause');
+        button.disabled = true;
+        const endpoint = webLoginPaused ? '/api/web-login/resume' : '/api/web-login/pause';
+        try {
+          const response = await fetch(API + endpoint, { method: 'POST' });
+          const data = await response.json();
+          if (!response.ok || !data.ok) throw new Error(webLoginPaused ? 'Không thể tiếp tục phiên' : 'Không thể tạm dừng phiên');
+          webLoginPaused = !webLoginPaused;
+          button.textContent = webLoginPaused ? 'Tiếp tục' : 'Tạm dừng';
+          showMsg('web-login-msg', webLoginPaused ? 'Phiên đã tạm dừng; log và tiến độ vẫn được giữ.' : 'Phiên đang tiếp tục chạy.', 'ok');
+        } catch (error) {
+          showMsg('web-login-msg', '❌ ' + error.message, 'err');
+        } finally {
+          button.disabled = false;
+        }
+      });
+
+      async function focusWebLoginTab(index, button) {
+        if (!Number.isInteger(index) || index < 1) return;
+        if (button) button.disabled = true;
+        try {
+          const response = await fetch(API + '/api/web-login/focus', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ index }),
+          });
+          const data = await response.json();
+          if (!response.ok || !data.ok) throw new Error(data.error || 'Không tìm thấy cửa sổ');
+          showMsg('web-login-msg', `Đã đưa cửa sổ #${index} lên trước.`, 'ok');
+        } catch (error) {
+          showMsg('web-login-msg', '❌ ' + error.message, 'err');
+        } finally {
+          if (button) button.disabled = false;
+        }
+      }
+
+      async function rearrangeWebLoginTabs() {
+        const button = $('btn-web-rearrange');
+        button.disabled = true;
+        try {
+          const response = await fetch(API + '/api/web-login/rearrange', { method: 'POST' });
+          const data = await response.json();
+          if (!response.ok || !data.ok) throw new Error(data.error || 'Không thể sắp xếp cửa sổ');
+          showMsg('web-login-msg', 'Đã gửi lệnh sắp xếp lại toàn bộ cửa sổ Chrome.', 'ok');
+        } catch (error) {
+          showMsg('web-login-msg', '❌ ' + error.message, 'err');
+        } finally {
+          button.disabled = false;
+        }
+      }
+
+      $('btn-web-rearrange').addEventListener('click', rearrangeWebLoginTabs);
+
+      function startWebLoginPolling(total, expectedRunId = webLoginRunId) {
+        if (webLoginPolling) clearInterval(webLoginPolling);
+        webLoginPolling = setInterval(async () => {
+          try {
+            const response = await fetch(API + '/api/web-login/status');
+            const data = await response.json();
+            if (expectedRunId && data.runId !== expectedRunId) return;
+            webBrowserControlsAvailable = data.browserControls === true
+              && Boolean((data.running || data.webReady) && (data.webSessions || data.done));
+            const finished = (data.done || 0) + (data.failed || 0);
+            const percent = total ? Math.round(finished / total * 100) : 0;
+            $('web-login-progress-bar').style.width = percent + '%';
+            const percentEl = $('web-login-progress-percent');
+            if (percentEl) percentEl.textContent = percent + '%';
+            $('web-done').textContent = data.done || 0;
+            $('web-fail').textContent = data.retries || 0;
+            $('web-fail').className = 'stat-val' + ((data.retries || 0) ? ' yellow' : '');
+            const active = Array.isArray(data.activeAccounts) ? data.activeAccounts : [];
+            $('web-login-active').style.display = active.length ? 'block' : 'none';
+            $('web-login-active').textContent = active.length ? `⚡ Đang đăng nhập: ${active.join(' • ')}` : '';
+            $('web-login-progress-text').textContent = data.webReady
+              ? `✅ ${data.done || 0}/${total} cửa sổ ChatGPT đang mở · ${data.retries || 0} lần thử lại`
+              : `${finished}/${total} · ${active.length} đang chạy · ${data.queued || 0} chờ · ${data.retries || 0} lần thử lại`;
+            renderWebLoginActivity(Array.isArray(data.logs) ? data.logs : []);
+            webLoginPaused = Boolean(data.paused);
+            $('btn-web-pause').style.display = data.running && !data.completed ? '' : 'none';
+            $('btn-web-pause').textContent = webLoginPaused ? 'Tiếp tục' : 'Tạm dừng';
+            if (data.running || data.webReady) {
+              $('btn-web-stop').style.display = '';
+              $('btn-web-stop').textContent = 'Hủy phiên hiện tại';
+            }
+            $('btn-web-rearrange').style.display = webBrowserControlsAvailable ? '' : 'none';
+            webLoginHistory = Array.isArray(data.results) ? data.results : [];
+            renderWebLoginHistory();
+            if (!data.running && !data.webReady && (data.completed || data.stopped)) {
+              clearInterval(webLoginPolling);
+              webLoginPolling = null;
+              $('btn-web-login').disabled = false;
+              $('btn-web-login').textContent = 'Bắt đầu chạy';
+              $('btn-web-stop').style.display = 'none';
+              $('btn-web-pause').style.display = 'none';
+              $('btn-web-rearrange').style.display = 'none';
+              const message = data.stopped
+                ? `Đã dừng: ${data.done || 0}/${total} thành công. Log và kết quả đã được lưu.`
+                : `Hoàn tất: ${data.done || 0} thành công, ${data.failed || 0} lỗi.`;
+              showMsg('web-login-msg', message, (data.failed || 0) ? 'err' : 'ok');
+              loadWebAccountHistory();
+            } else if (!data.running && !data.webReady && data.interrupted) {
+              clearInterval(webLoginPolling);
+              webLoginPolling = null;
+              $('btn-web-login').disabled = false;
+              $('btn-web-login').textContent = 'Chạy lại danh sách';
+              $('btn-web-pause').style.display = 'none';
+              $('btn-web-stop').style.display = 'none';
+              $('btn-web-rearrange').style.display = 'none';
+              showMsg('web-login-msg', 'Tiến trình dừng ngoài dự kiến. Log và tiến độ cũ vẫn được giữ; hãy chạy lại danh sách.', 'err');
+            }
+          } catch {}
+        }, 500);
+      }
+
+      function renderWebLoginHistory() {
+        const element = $('web-login-history');
+        if (!webLoginHistory.length) {
+          element.innerHTML = '<span class="empty-cell">Chưa có kết quả phiên này.</span>';
+          return;
+        }
+        element.innerHTML = '<div style="font-size:.82rem;color:var(--muted);margin-bottom:6px">Kết quả đăng nhập web:</div>' + webLoginHistory.map(result => {
+          const success = result.status === 'success';
+          const personalAccountVerified = success && result.personalAccountVerified === true;
+          const resultIndex = Number.parseInt(result.index, 10);
+          const flowDetail = result.linkOpened
+            ? (result.chatgptReloaded ? `tab phụ đã mở, tab chính đã reload` : `tab phụ đã mở`)
+            : `ChatGPT đang mở`;
+          const detail = success
+            ? `${personalAccountVerified ? 'Đã xác minh Personal account' : 'Chưa xác minh Personal account'} · ${flowDetail}`
+            : (result.error || 'Login lỗi');
+          const statusClass = success ? (personalAccountVerified ? '' : 'warning') : 'error';
+          const statusIcon = success ? (personalAccountVerified ? '✅' : '⚠️') : '❌';
+          const action = success && webBrowserControlsAvailable && Number.isInteger(resultIndex) && resultIndex > 0
+            ? `<button class="btn-compact web-result-action" type="button" data-web-focus-index="${resultIndex}">Mở tab</button>`
+            : '<span></span>';
+          return `<div class="web-result-row"><span>${statusIcon}</span><span class="web-result-email" title="${esc(result.email || '')}">${esc(result.email || '')}</span><span class="web-result-status ${statusClass}">${esc(detail)}</span>${action}</div>`;
+        }).join('');
+        element.querySelectorAll('[data-web-focus-index]').forEach(button => {
+          button.addEventListener('click', () => {
+            focusWebLoginTab(Number.parseInt(button.dataset.webFocusIndex, 10), button);
+          });
+        });
+      }
+
+      function renderWebLoginActivity(logs) {
+        const element = $('web-login-activity');
+        const liveIndicator = $('term-live-indicator');
+        if (!Array.isArray(logs) || !logs.length) {
+          element.innerHTML = '<span class="term-empty"><span class="term-prompt">$</span> Sẵn sàng nhận danh sách tài khoản...</span>';
+          if (liveIndicator) liveIndicator.style.display = 'none';
+          return;
+        }
+        if (liveIndicator) liveIndicator.style.display = 'inline-flex';
+        const shouldFollow = element.scrollHeight - element.scrollTop - element.clientHeight < 48;
+        element.innerHTML = logs.map(log => {
+          const date = new Date(log.time || Date.now());
+          const time = Number.isNaN(date.getTime()) ? '--:--:--' : date.toLocaleTimeString('vi-VN', { hour12: false });
+          const level = ['success', 'error', 'warning'].includes(log.level) ? log.level : 'info';
+          const badgeText = level === 'success' ? 'OK' : (level === 'error' ? 'ERR' : (level === 'warning' ? 'WARN' : 'INFO'));
+          const isSystem = !log.email || log.email === 'system';
+          const emailDisplay = isSystem ? 'system' : esc(log.email);
+          const emailClass = isSystem ? 'activity-account system-acc' : 'activity-account';
+          return `<div class="activity-line ${level}"><time>${esc(time)}</time><div class="activity-body"><span class="${emailClass}">${emailDisplay}</span><span class="activity-message"><span class="term-badge">${badgeText}</span>${esc(log.message || '')}</span></div></div>`;
+        }).join('');
+        if (shouldFollow) element.scrollTop = element.scrollHeight;
+      }
+
+      async function loadWebAccountHistory() {
+        try {
+          const response = await fetch(API + '/api/web-login/history');
+          const data = await response.json();
+          webAccountHistory = Array.isArray(data.history) ? data.history : [];
+          renderWebAccountHistory();
+        } catch {
+          webAccountHistory = [];
+          renderWebAccountHistory('Không thể tải lịch sử.');
+        }
+      }
+
+      function renderWebAccountHistory(errorMessage = '') {
+        const element = $('web-account-history');
+        const countEl = $('history-modal-count');
+        if (errorMessage) {
+          element.innerHTML = `<span class="empty-cell">${esc(errorMessage)}</span>`;
+          if (countEl) countEl.textContent = '0 bản ghi';
+          return;
+        }
+        if (!webAccountHistory.length) {
+          element.innerHTML = '<span class="empty-cell">Chưa có lịch sử.</span>';
+          if (countEl) countEl.textContent = '0 bản ghi';
+          return;
+        }
+        if (countEl) countEl.textContent = webAccountHistory.length + ' bản ghi';
+        element.innerHTML = webAccountHistory.slice(0, 200).map(item => {
+          const success = item.status === 'success';
+          const personalAccountVerified = success && item.personalAccountVerified === true;
+          const date = new Date(item.finishedAt || item.startedAt || Date.now());
+          const time = Number.isNaN(date.getTime()) ? '' : date.toLocaleString('vi-VN', { hour12: false });
+          const duration = item.durationSeconds ? `${item.durationSeconds}s` : '—';
+          const statusClass = success ? (personalAccountVerified ? 'success' : 'warning') : 'error';
+          const statusIcon = success ? (personalAccountVerified ? '✅' : '⚠️') : '❌';
+          const statusLabel = success
+            ? (personalAccountVerified ? 'Đã xác minh Personal account' : 'Chưa xác minh Personal account')
+            : 'Lỗi';
+          return `<div class="history-row"><span>${statusIcon}</span><span class="history-email" title="${esc(item.email || '')}">${esc(item.email || '')}</span><span class="history-status ${statusClass}">${esc(statusLabel)} · ${esc(duration)}</span><time>${esc(time)}</time></div>`;
+        }).join('');
+      }
+
+      $('btn-clear-web-history').addEventListener('click', async () => {
+        if (!window.confirm('Xóa toàn bộ lịch sử đăng nhập web?')) return;
+        const button = $('btn-clear-web-history');
+        button.disabled = true;
+        try {
+          const response = await fetch(API + '/api/web-login/history', { method: 'DELETE' });
+          if (!response.ok) throw new Error('Không thể xóa lịch sử');
+          webAccountHistory = [];
+          renderWebAccountHistory();
+        } catch (error) {
+          showMsg('web-login-msg', '❌ ' + error.message, 'err');
+        } finally {
+          button.disabled = false;
+        }
+      });
+
+      async function resumeWebLoginPolling() {
+        try {
+          const response = await fetch(API + '/api/web-login/status');
+          const data = await response.json();
+          webBrowserControlsAvailable = data.browserControls === true
+            && Boolean((data.running || data.webReady) && (data.webSessions || data.done));
+          if (Array.isArray(data.results)) {
+            webLoginHistory = data.results;
+            renderWebLoginHistory();
+          }
+          webLoginRunId = data.runId || '';
+          renderWebLoginActivity(Array.isArray(data.logs) ? data.logs : []);
+          if (data.running || data.webReady) {
+            showWebLoginCancelState(data.webReady ? 'Phiên ChatGPT Web đang được giữ mở. Hủy phiên hiện tại để chạy lại từ đầu.' : 'Luồng ChatGPT Web đang chạy.');
+            webLoginPaused = Boolean(data.paused);
+            $('btn-web-pause').style.display = data.running && !data.completed ? '' : 'none';
+            $('btn-web-pause').textContent = webLoginPaused ? 'Tiếp tục' : 'Tạm dừng';
+            $('btn-web-rearrange').style.display = webBrowserControlsAvailable ? '' : 'none';
+            startWebLoginPolling(
+              data.total || Math.max(1, (data.done || 0) + (data.failed || 0)),
+              webLoginRunId,
+            );
+          }
+        } catch {}
+        loadWebAccountHistory();
+      }
+
+      // === Helpers ===
+      function showMsg(id, text, type) { const el = $(id); el.textContent = text; el.className = 'msg show ' + type }
+      function hideMsg(id) { $(id).className = 'msg' }
+
+      // === Tabs ===
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+          document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
+          btn.classList.add('active');
+          $('tab-' + btn.dataset.tab).classList.remove('hidden');
+          if (btn.dataset.tab === 'accounts') loadAccounts();
+          if (btn.dataset.tab === 'web-login') resumeWebLoginPolling();
+        });
+      });
+
+      // === Restore controls when a retained Chrome session already exists after reload.
+      resumeWebLoginPolling();
+
+      // === History Modal ===
+      const historyModal = $('history-modal');
+
+      function openHistoryModal() {
+        historyModal.classList.add('open');
+        document.body.style.overflow = 'hidden';
+        loadWebAccountHistory();
+      }
+
+      function closeHistoryModal() {
+        historyModal.classList.remove('open');
+        document.body.style.overflow = '';
+      }
+
+      $('btn-open-history').addEventListener('click', openHistoryModal);
+      $('btn-modal-close').addEventListener('click', closeHistoryModal);
+      $('btn-modal-close-footer').addEventListener('click', closeHistoryModal);
+
+      // Click backdrop to close
+      historyModal.addEventListener('click', (e) => {
+        if (e.target === historyModal) closeHistoryModal();
+      });
+
+      // Escape key to close
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && historyModal.classList.contains('open')) closeHistoryModal();
+      });
+
+    })();
+  </script>
+</body>
+
+</html>

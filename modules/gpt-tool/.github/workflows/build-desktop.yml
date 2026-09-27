@@ -1,0 +1,87 @@
+name: Build desktop apps
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [develop]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows EXE
+            os: windows-latest
+            artifact: GPT-Tool-Windows
+            path: dist/GPT-Tool.exe
+          - name: macOS App
+            os: macos-14
+            artifact: GPT-Tool-macOS-Intel
+            path: dist/GPT-Tool-macOS.zip
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install -U -r requirements.txt -r requirements-build.txt
+
+      - name: Run tests
+        run: python -m pytest -q
+
+      - name: Build Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/build_windows.ps1
+
+      - name: Smoke test Windows executable
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:GPT_TOOL_PORT = "8877"
+          $env:GPT_TOOL_DATA_DIR = Join-Path $env:RUNNER_TEMP "GPT-Tool"
+          $process = Start-Process -FilePath "dist\GPT-Tool.exe" -PassThru
+          $healthy = $false
+          try {
+            for ($attempt = 0; $attempt -lt 30; $attempt++) {
+              try {
+                $response = Invoke-RestMethod "http://127.0.0.1:8877/api/health" -TimeoutSec 1
+                $page = Invoke-WebRequest "http://127.0.0.1:8877/" -TimeoutSec 1
+                if ($response.ok -and $page.StatusCode -eq 200 -and $page.Content -match "shoptaikhoan - auto import") {
+                  $healthy = $true
+                  break
+                }
+              } catch {
+                Start-Sleep -Milliseconds 500
+              }
+            }
+            if (-not $healthy) {
+              throw "GPT-Tool.exe did not return a healthy HTTP response"
+            }
+          } finally {
+            Get-Process "GPT-Tool" -ErrorAction SilentlyContinue | Stop-Process -Force
+          }
+
+      - name: Build macOS
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          PYTHON_BIN: python
+        run: bash scripts/build_macos.sh
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.path }}
+          if-no-files-found: error
+          retention-days: 14

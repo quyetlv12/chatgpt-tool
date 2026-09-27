@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b1113">
+  <title>shoptaikhoan - auto import</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2367d6c4'/%3E%3Cpath d='M18 25h28l-2 25H20l-2-25Z' fill='none' stroke='%2309211d' stroke-width='5' stroke-linejoin='round'/%3E%3Cpath d='M24 26v-5a8 8 0 0 1 16 0v5' fill='none' stroke='%2309211d' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <main class="page">
+      <div class="studio-grid">
+        <aside class="sidebar">
+          <div class="section-heading"><span class="section-index">01</span><div><h2>Định dạng</h2><p>Chọn đầu ra</p></div></div>
+          <div class="formats" id="formats" role="radiogroup" aria-label="Định dạng xuất"></div>
+          <div class="sidebar-divider"></div>
+          <div class="sidebar-footnote"><span class="tiny-lock" aria-hidden="true">⌁</span><span>Chạy cục bộ · token không rời khỏi máy</span></div>
+        </aside>
+
+        <section class="workspace-card">
+          <div class="workspace-header">
+            <div class="tabs" role="tablist" aria-label="Tác vụ">
+              <button type="button" class="active" data-tab="export" role="tab" aria-selected="true">Export Codex</button>
+              <button type="button" data-tab="convert" role="tab" aria-selected="false">Convert JSON</button>
+            </div>
+            <div class="workspace-header-actions"><div class="field workers-field"><label for="workers">Số luồng</label><input type="number" id="workers" value="2" min="1" max="8" inputmode="numeric"></div><span class="workspace-status">ready</span><button type="button" class="shutdown" id="shutdown-tool"><svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 2v10"></path><path d="M18.4 6.6a9 9 0 1 1-12.8 0"></path></svg>Tắt tool</button></div>
+          </div>
+          <div class="field" hidden><label for="proxy">Proxy <span>(tuỳ chọn)</span></label><input type="text" id="proxy" placeholder="http://user:pass@host:port" autocomplete="off"></div>
+
+          <div id="tab-export" role="tabpanel">
+            <div class="field-heading"><label for="lines">Danh sách tài khoản</label><span>email | password | totp</span></div>
+            <textarea id="lines" placeholder="user@example.com | password | JBSWY3DPEHPK3PXP" spellcheck="false"></textarea>
+            <div class="helper-row"><span>Khoảng trắng quanh dấu <b>|</b> được tự động xử lý.</span><span class="secure-label"><span aria-hidden="true">●</span> local only</span></div>
+            <div class="format-confirmation" id="format-confirmation" role="status" aria-live="polite"><span class="format-check" aria-hidden="true">✓</span><span id="format-confirmation-text"></span></div>
+            <div class="action-row"><button type="button" class="primary" id="run-export"><svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m6 3 14 9-14 9Z"></path></svg>Chạy tool</button><button type="button" class="ghost" id="open-out"><svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.7-.9l-.8-1.2A2 2 0 0 0 7.9 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"></path></svg>Mở file hệ thống</button></div>
+          </div>
+
+          <div id="tab-convert" class="hidden" role="tabpanel">
+            <div class="field-heading"><label for="json-in">Session / auth JSON</label><span>một hoặc nhiều tài khoản</span></div>
+            <textarea id="json-in" placeholder='{"access_token":"...","email":"..."}' spellcheck="false"></textarea>
+            <div class="helper-row"><span>JSON được chuyển đổi và lưu vào thư mục out.</span></div>
+            <div class="action-row"><button type="button" class="primary" id="run-convert"><span class="button-icon" aria-hidden="true">↗</span> Chạy Convert</button></div>
+          </div>
+        </section>
+      </div>
+
+      <section class="monitor-card" id="live-card">
+        <div class="monitor-header"><div class="monitor-title"><span class="monitor-kicker">02 / Monitor</span><div class="monitor-name"><span class="spinner" id="log-spinner" hidden></span><h2>Tiến trình</h2></div></div><div class="monitor-actions"><span id="live-summary" class="log-count">Chưa chạy</span><button type="button" id="copy-all" class="copy-all" hidden>Copy tất cả</button></div></div>
+        <div class="log-progress" hidden id="log-progress"><i id="log-bar"></i></div>
+        <ul id="line-log" class="line-log"></ul>
+        <p id="status" class="log-banner" hidden></p>
+      </section>
+    </main>
+    <footer class="footer"><span>GPT-Tool</span><span>v1.0 · private workspace</span></footer>
+  </div>
+  <script src="/app.js"></script>
+</body>
+</html>

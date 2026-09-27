@@ -1,0 +1,18 @@
+'use strict';
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const root = path.join(__dirname, '../change 2fa community/static');
+const app = fs.readFileSync(path.join(root, 'app.js'), 'utf8');
+const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+assert.match(app, /data-action="logout-sessions"/);
+assert.match(app, /icon-button logout-sessions/);
+assert.match(app, /\/api\/jobs\/\$\{encodeURIComponent\(id\)\}\/logout-sessions/);
+assert.match(app, /JSON\.stringify\(\{ confirm: 'LOGOUT_ALL_SESSIONS' \}\)/);
+assert.match(app, /sessions_logging_out/);
+assert.match(html, /id="logout-sessions-confirm"[^>]*aria-labelledby="logout-sessions-title"/);
+assert.match(html, /30 phút/);
+assert.match(html, /app khác[^<]*cùng tài khoản/);
+assert.match(app, /Đã gửi yêu cầu logout/);
+assert.match(app, /logout-sessions-cancel[^]*?disabled = true/);
+console.log('logout-sessions UI: separate action, confirmation, pending lock and warnings passed');

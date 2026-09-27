@@ -1,0 +1,160 @@
+"""Passkey handoff tests; no real credentials or WebAuthn enrollment."""
+import asyncio
+from dataclasses import asdict, replace
+from types import SimpleNamespace
+from unittest import IsolatedAsyncioTestCase, TestCase
+from unittest.mock import AsyncMock, Mock, patch
+
+from test_delete_all_chats import _JobRepo, _SettingsRepo, server
+from fastapi.testclient import TestClient
+from jobs import TwoFAJob, TwoFAJobManager
+from service import TwoFAService, TwoFAFlowError
+from passkey_service import PasskeyHandoffs, prepare_passkey_url, validate_passkey_url
+
+URL = 'https://auth.openai.com/passkey-enroll?state=synthetic-state'
+
+
+class PasskeyUrlTests(TestCase):
+    def test_exact_allowlist(self):
+        self.assertEqual(validate_passkey_url(URL), URL)
+        for url in ('http://auth.openai.com/passkey-enroll?state=x',
+                    'https://auth.openai.com.evil.test/passkey-enroll?state=x',
+                    'https://evil@auth.openai.com/passkey-enroll?state=x',
+                    'https://auth.openai.com:444/passkey-enroll?state=x',
+                    'https://auth.openai.com/log-in?state=x',
+                    'https://auth.openai.com/passkey-enroll', URL+'\r\n',
+                    URL+'&redirect_uri=https://evil.test', URL+'#fragment'):
+            with self.subTest(url=url), self.assertRaises(ValueError):
+                validate_passkey_url(url)
+
+    def test_one_use_expiry_and_capacity(self):
+        clock = Mock(return_value=10)
+        store = PasskeyHandoffs(clock=clock)
+        token = store.issue(URL)
+        self.assertNotIn('synthetic-state', token)
+        self.assertEqual(store.consume(token), URL)
+        with self.assertRaises(KeyError): store.consume(token)
+        token = store.issue(URL)
+        clock.return_value = 131
+        with self.assertRaises(KeyError): store.consume(token)
+        for _ in range(32): store.issue(URL)
+        with self.assertRaises(ValueError): store.issue(URL)
+
+
+class PasskeyHttpTests(IsolatedAsyncioTestCase):
+    async def test_official_enrollment_route_no_redirect_following(self):
+        transport = AsyncMock()
+        transport.cookies = Mock()
+        transport.__aenter__.return_value = transport
+        transport.get.return_value = SimpleNamespace(status_code=302, headers={'Location':URL})
+        with patch('curl_cffi.requests.AsyncSession', return_value=transport):
+            result = await prepare_passkey_url(session_data={
+                'accessToken':'synthetic-token', '__cookies':[
+                    {'name':'__Secure-next-auth.session-token','value':'synthetic-cookie','domain':'.chatgpt.com','path':'/'},
+                    {'name':'auth-only','value':'private','domain':'auth.openai.com'},
+                ]})
+        self.assertEqual(result, URL)
+        transport.cookies.set.assert_called_once_with('__Secure-next-auth.session-token','synthetic-cookie',domain='.chatgpt.com',path='/')
+        transport.get.assert_awaited_once()
+        args, kwargs = transport.get.call_args
+        self.assertEqual(args[0], 'https://chatgpt.com/auth/enroll_mfa')
+        self.assertEqual(kwargs['params'], {'factor':'passkey'})
+        self.assertFalse(kwargs['allow_redirects'])
+
+    async def test_unexpected_html_or_redirect_fails_closed(self):
+        for status, location in ((200,URL),(302,'https://evil.test/'),(302,'https://auth.openai.com/log-in'),(500,'')):
+            transport=AsyncMock(); transport.cookies=Mock(); transport.__aenter__.return_value=transport
+            transport.get.return_value=SimpleNamespace(status_code=status,headers={'Location':location},text='private')
+            with patch('curl_cffi.requests.AsyncSession',return_value=transport):
+                with self.assertRaises(ValueError) as error:
+                    await prepare_passkey_url(session_data={'accessToken':'test','__cookies':[{'name':'__Secure-next-auth.session-token','value':'x','domain':'chatgpt.com'}]})
+            self.assertNotIn('private',str(error.exception))
+
+    async def test_invalid_session_never_sends_request(self):
+        with patch('curl_cffi.requests.AsyncSession') as transport:
+            for session in ({}, {'accessToken':'x','__cookies':[]}, {'accessToken':'x','__cookies':[{'name':'x','value':'x','domain':'evil.test'}]}):
+                with self.assertRaises(ValueError): await prepare_passkey_url(session_data=session)
+            transport.assert_not_called()
+
+
+class PasskeyServiceTests(IsolatedAsyncioTestCase):
+    async def test_only_login_and_handoff_no_account_mutation(self):
+        login=AsyncMock(return_value={'accessToken':'synthetic-token'})
+        forbidden=AsyncMock(side_effect=AssertionError('unrelated operation'))
+        service=TwoFAService(login_fn=login,rotate_fn=forbidden,usage_fn=forbidden,entitlement_fn=forbidden,delete_chats_fn=forbidden,logout_sessions_fn=forbidden)
+        with patch('passkey_service.prepare_passkey_url',new=AsyncMock(return_value=URL)) as prepare:
+            self.assertEqual(await service.prepare_passkey(email='demo@example.com',password='synthetic',secret='TEST',timeout=30), URL)
+        login.assert_awaited_once(); prepare.assert_awaited_once(); forbidden.assert_not_awaited()
+
+    async def test_errors_hide_sensitive_state(self):
+        service=TwoFAService(login_fn=AsyncMock(side_effect=RuntimeError('secret-token')),login_attempts=1)
+        with self.assertRaises(TwoFAFlowError) as error:
+            await service.prepare_passkey(email='demo@example.com',password='synthetic',secret='TEST',timeout=30)
+        self.assertNotIn('secret-token',str(error.exception))
+
+
+class PasskeyManagerTests(IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.repo=_JobRepo(); self.service=SimpleNamespace(prepare_passkey=AsyncMock(return_value=URL))
+        self.manager=TwoFAJobManager(self.repo,_SettingsRepo(),service=self.service)
+        self.job=TwoFAJob(id='live',email='demo@example.com',password='synthetic',secret='TEST',status='success',account_state='live',login_verified=True)
+        self.manager.jobs['live']=self.job; self.manager.order.append('live')
+
+    async def test_preserves_job_database_and_output(self):
+        before=asdict(self.job); output=self.manager.output()
+        self.assertEqual(await self.manager.prepare_passkey('live'),URL)
+        self.assertEqual(asdict(self.job),before); self.assertEqual(self.manager.output(),output)
+        self.assertEqual(self.repo.updated,[]); self.assertEqual(self.repo.logs,[])
+        self.assertNotIn('passkey_preparing',self.manager._state(self.job))
+
+    async def test_rejects_conflicts_and_cleans_up_on_cancel(self):
+        duplicate=replace(self.job,id='other',status='running')
+        self.manager.jobs['other']=duplicate
+        with self.assertRaises(ValueError): await self.manager.prepare_passkey('live')
+        duplicate.status='success'
+        entered=asyncio.Event()
+        async def pending(**_): entered.set(); await asyncio.Event().wait()
+        self.service.prepare_passkey.side_effect=pending
+        task=asyncio.create_task(self.manager.prepare_passkey('live')); await entered.wait()
+        try:
+            with self.assertRaises(ValueError): self.manager.recheck('other')
+            with self.assertRaises(ValueError): await self.manager.logout_all_sessions('other')
+            with self.assertRaises(ValueError): await self.manager.delete_all_chats('other')
+            with self.assertRaises(ValueError): await self.manager.clear_async()
+        finally:
+            task.cancel()
+            with self.assertRaises(asyncio.CancelledError): await task
+        self.assertFalse(self.job.passkey_preparing)
+
+
+class PasskeyApiTests(TestCase):
+    def setUp(self):
+        self.service=SimpleNamespace(prepare_passkey=AsyncMock(return_value=URL))
+        self.manager=TwoFAJobManager(_JobRepo(),_SettingsRepo(),service=self.service)
+        self.job=TwoFAJob(id='live',email='demo@example.com',password='synthetic',secret='TEST',status='success',account_state='live',login_verified=True)
+        self.manager.jobs['live']=self.job
+        self.passwords=SimpleNamespace(jobs={})
+        self.patches=[patch.object(server,'manager',self.manager),patch.object(server,'password_manager',self.passwords),patch.object(server,'passkey_handoffs',PasskeyHandoffs())]
+        for p in self.patches: p.start()
+        self.client=TestClient(server.app); self.headers={'X-Auth-Token':server.auth_token}
+    def tearDown(self):
+        for p in reversed(self.patches): p.stop()
+    def start(self,headers=None,confirm='ADD_PASSKEY'):
+        return self.client.post('/api/jobs/live/passkey/start',headers=self.headers if headers is None else headers,json={'confirm':confirm})
+    def test_confirmation_auth_and_password_conflict(self):
+        self.assertEqual(self.start(headers={}).status_code,401)
+        self.assertEqual(self.start(confirm='yes').status_code,422)
+        self.passwords.jobs['p']=SimpleNamespace(email=self.job.email,status='running')
+        self.assertEqual(self.start().status_code,409)
+        self.service.prepare_passkey.assert_not_awaited()
+    def test_one_time_safe_handoff_no_success_claim(self):
+        response=self.start(); self.assertEqual(response.status_code,200)
+        self.assertEqual(response.headers['cache-control'],'no-store')
+        self.assertNotIn('synthetic-state',response.text)
+        self.assertNotIn('password',response.text)
+        link=response.json()['launch_path']
+        response=self.client.get(link,follow_redirects=False)
+        self.assertEqual(response.status_code,303)
+        self.assertEqual(response.headers['location'],URL)
+        self.assertEqual(response.headers['referrer-policy'],'no-referrer')
+        self.assertEqual(self.client.get(link,follow_redirects=False).status_code,410)

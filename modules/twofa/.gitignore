@@ -1,0 +1,42 @@
+# Local environments and dependency caches
+.venv/
+venv/
+node_modules/
+
+# Python and test caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage/
+
+# Local runtime data and credentials
+.env
+.env.*
+!.env.example
+runtime/
+*.db
+*.sqlite
+*.sqlite3
+*.log
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Build output
+build/
+dist/
+release/
+releases/
+
+# Editor, OS, and local agent state
+.DS_Store
+.idea/
+.vscode/
+.codex/
+MEMORY.md

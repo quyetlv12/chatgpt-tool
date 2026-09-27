@@ -1,0 +1,37 @@
+# macOS and editor files
+.DS_Store
+.vscode/
+.idea/
+
+# Python runtime
+__pycache__/
+*.py[cod]
+*.log
+.venv/
+venv/
+
+# Local credentials, sessions, and generated results
+accounts*.txt
+*_accounts.txt
+_tmp_web_accounts_*.txt
+auto_login_results.json
+web_login_history.json
+web_login_history.json.tmp
+web_login_state.json
+web_login_state.json.tmp
+debug_*.png
+debug_web_*.png
+backups/
+.env
+.env.*
+
+# Generated artifacts
+.artifacts/
+build/
+dist/
+*.dmg
+*.app/
+*.spec
+
+# Local project memory
+MEMORY.md

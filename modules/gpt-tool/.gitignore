@@ -1,0 +1,22 @@
+# Local environments and caches
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.DS_Store
+.build-venv/
+build/
+dist/
+
+# Generated exports contain credentials and tokens
+out/
+accounts*.txt
+auth.json
+session.json
+failed.txt
+
+# Local configuration and logs
+.env
+.env.*
+!.env.example
+*.log
