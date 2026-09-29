@@ -82,8 +82,9 @@ class TwoFAService:
         email: str,
         password: str,
         secret: str,
-        timeout: float,
+        timeout: float | None,
         log: LogFn,
+        attempts: int | None = None,
     ) -> dict[str, Any]:
         from session_phase import (
             classify_account_check_error,
@@ -93,7 +94,8 @@ class TwoFAService:
         default_login, _ = self._resolve_dependencies()
         login_fn = self._login_fn or default_login
         last_error: BaseException | None = None
-        for attempt in range(1, self._login_attempts + 1):
+        attempts = self._login_attempts if attempts is None else attempts
+        for attempt in range(1, attempts + 1):
             try:
                 session = await asyncio.wait_for(
                     login_fn(
@@ -113,9 +115,9 @@ class TwoFAService:
                 raise
             except Exception as exc:
                 last_error = exc
-                if is_fatal_login_error(exc) or attempt >= self._login_attempts:
+                if is_fatal_login_error(exc) or attempt >= attempts:
                     break
-                log(f"[login] lần {attempt}/{self._login_attempts} chưa thành công — thử lại...")
+                log(f"[login] lần {attempt}/{attempts} chưa thành công — thử lại...")
                 await asyncio.sleep(self._retry_delay)
         detail = str(last_error).strip() if last_error else "unknown login error"
         account_state = (
@@ -366,24 +368,44 @@ class TwoFAService:
     async def prepare_passkey(
         self, *, email: str, password: str, secret: str, timeout: float,
     ) -> str:
-        from passkey_service import prepare_passkey_url
+        from passkey_service import PasskeyPreparationError, prepare_passkey_url
 
+        stage = "đăng nhập lại"
+        cancelled = False
+        login_task = asyncio.create_task(self._login(
+            email=email, password=password, secret=secret, timeout=None,
+            log=lambda _message: None, attempts=1,
+        ))
         try:
-            session = await self._login(
-                email=email, password=password, secret=secret, timeout=timeout,
-                log=lambda _message: None,
-            )
-            return await asyncio.wait_for(
-                prepare_passkey_url(session_data=session, timeout=min(timeout, 20.0)),
-                timeout=min(timeout, 25.0),
-            )
+            async with asyncio.timeout(min(timeout, 180.0)):
+                # Cancelling to_thread does not stop curl. Keep the account lock
+                # until login settles; never start enrollment after the deadline.
+                session = await asyncio.shield(login_task)
+                stage = "lấy liên kết đăng ký passkey"
+                return await asyncio.wait_for(
+                    prepare_passkey_url(session_data=session, timeout=min(timeout, 20.0)),
+                    timeout=min(timeout, 25.0),
+                )
         except asyncio.CancelledError:
-            raise
+            cancelled = True
+        except TimeoutError as exc:
+            raise TwoFAFlowError(f"Bước {stage} quá thời gian chờ. Chưa thêm passkey; hãy thử lại.") from exc
+        except PasskeyPreparationError as exc:
+            raise TwoFAFlowError(str(exc)) from exc
         except Exception as exc:
             raise TwoFAFlowError(
-                "Không chuẩn bị được passkey. Tài khoản có thể chưa hỗ trợ hoặc phiên đã hết hạn; "
-                "hãy thử thêm trong Settings > Security của ChatGPT."
+                f"Không thể {stage}. Chưa thêm passkey; hãy kiểm tra kết nối và thông tin đăng nhập."
             ) from exc
+        finally:
+            while not login_task.done():
+                try:
+                    await asyncio.shield(login_task)
+                except asyncio.CancelledError:
+                    cancelled = True
+                except Exception:
+                    break
+            if cancelled:
+                raise asyncio.CancelledError
 
     async def logout_all_sessions(
         self, *, email: str, password: str, secret: str, timeout: float, log: LogFn,

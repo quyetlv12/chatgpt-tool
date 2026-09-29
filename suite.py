@@ -229,6 +229,12 @@ def create_hub_server(host: str, port: int, manager: SuiteManager, web_root: Pat
             self._send(200, b'{"ok": true}', "application/json; charset=utf-8")
             threading.Thread(target=self.server.shutdown, name="suite-shutdown", daemon=True).start()
 
+        def do_PUT(self) -> None:
+            if module := self._module():
+                self._proxy(module)
+                return
+            self._send(404, b"Not found", "text/plain; charset=utf-8")
+
         def do_DELETE(self) -> None:
             if module := self._module():
                 self._proxy(module)

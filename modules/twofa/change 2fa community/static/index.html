@@ -302,8 +302,8 @@
     </div>
     <p id="passkey-description">Tool sẽ đăng nhập lại và mở trang đăng ký chính thức của OpenAI. Passkey được tạo bằng Touch ID/Face ID, mã PIN hoặc khóa bảo mật của bạn; private key không đi qua tool và không được lưu vào database.</p>
     <div id="passkey-email" class="row-change-account"></div>
-    <p id="passkey-note">Chưa xác nhận đã thêm passkey. Không bật Advanced Account Security trong luồng này. Dừng thao tác khác trên cùng tài khoản khi trang OpenAI đang mở.</p>
-    <a id="passkey-open" class="button primary" target="_blank" rel="noopener noreferrer" hidden>Mở trang OpenAI để hoàn tất</a>
+    <p id="passkey-note" role="status" aria-live="polite">Chưa xác nhận đã thêm passkey. Không bật Advanced Account Security trong luồng này. Dừng thao tác khác trên cùng tài khoản khi trang OpenAI đang mở.</p>
+    <a id="passkey-open" class="button primary" target="_blank" rel="noopener noreferrer" hidden>Mở lại trang OpenAI (nếu tab chưa mở)</a>
     <div class="confirm-actions">
       <button id="passkey-cancel" class="button ghost" type="button" autofocus>Đóng</button>
       <button id="passkey-confirm-action" class="button confirm-change" type="button"><svg class="ui-icon" aria-hidden="true"><use href="/assets/tabler-icons.svg?v=1.0.3#ti-fingerprint"></use></svg><span>Chuẩn bị thêm passkey</span></button>
@@ -385,7 +385,7 @@
   <script src="/assets/usage-ui.js?v=1.3.9" defer></script>
   <script src="/assets/payment-ui.js?v=1.0.2" defer></script>
   <script src="/assets/realtime-ui.js?v=1.0.0" defer></script>
-  <script src="/assets/app.js?v=1.3.33" defer></script>
+  <script src="/assets/app.js?v=1.3.35" defer></script>
   <script src="/assets/password-history-ui.js?v=1.0.0" defer></script>
   <script src="/assets/password-ui.js?v=1.2.2" defer></script>
 </body>

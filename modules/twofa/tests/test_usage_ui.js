@@ -132,7 +132,7 @@ assert.match(appSource, /icon\('refresh'\)/);
 assert.match(appSource, /view\.resetCreditLabel/);
 assert.match(appSource, /usage-reset-credit/);
 assert.match(htmlSource, /usage-ui\.js\?v=1\.3\.9/);
-assert.match(htmlSource, /app\.js\?v=1\.3\.33/);
+assert.match(htmlSource, /app\.js\?v=1\.3\.35/);
 assert.match(htmlSource, /dashboard\.css\?v=1\.5\.16/);
 assert.match(appSource, /icon\('list-details'\)/);
 assert.match(appSource, /job\.status === 'queued'/);
@@ -189,7 +189,7 @@ assert.match(appSource, /api\('\/api\/twofa-history', \{ cache: 'no-store' \}\)/
 assert.match(appSource, /state\.twofaHistory = \[\]/);
 assert.match(appSource, /copyTwoFAHistory/);
 assert.match(htmlSource, /\/assets\/realtime-ui\.js\?v=/);
-assert.match(htmlSource, /app\.js\?v=1\.3\.33/);
+assert.match(htmlSource, /app\.js\?v=1\.3\.35/);
 assert.ok(
   htmlSource.indexOf('/assets/realtime-ui.js') < htmlSource.indexOf('/assets/app.js'),
   'realtime helper must load before app.js',

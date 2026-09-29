@@ -555,6 +555,16 @@
       align-items: start;
     }
 
+    /* Codex is input-first: give the account editor more room while keeping
+       the retained-session log readable without dominating the workspace. */
+    .codex-workflow-grid {
+      grid-template-columns: minmax(440px, 1.35fr) minmax(360px, 0.9fr);
+    }
+
+    .web-login-workflow-grid {
+      grid-template-columns: minmax(440px, 1.35fr) minmax(360px, 0.9fr);
+    }
+
     .control-stack,
     .results-stack {
       display: grid;
@@ -1861,6 +1871,7 @@
       </div>
       <nav class="tabs" aria-label="Điều hướng công cụ">
         <button class="tab-btn" data-tab="oauth">OAuth Login</button>
+        <button class="tab-btn" data-tab="codex-web">Login Codex</button>
         <button class="tab-btn active" data-tab="web-login">ChatGPT Web</button>
         <button class="tab-btn" data-tab="import">Import Session</button>
         <button class="tab-btn" data-tab="accounts">Tài khoản hiện có</button>
@@ -2138,9 +2149,44 @@
       </div>
     </section>
 
+    <!-- TAB: Codex Web Login (kept separate from OAuth/9router) -->
+    <section class="tab-content hidden" id="tab-codex-web">
+      <div class="workflow-grid codex-workflow-grid">
+        <div class="control-stack">
+          <div class="control-card">
+            <div class="section-label">Danh sách tài khoản <span class="section-hint">email|password|2fa</span></div>
+            <textarea id="codex-web-accounts-input" rows="2" spellcheck="false" autocomplete="off" aria-label="Tài khoản đăng nhập Codex" placeholder="Một tài khoản: email|password|2fa_secret"></textarea>
+            <div class="field-help">Tool tự tạo luồng OAuth Codex mới, mở auth.openai.com và tự điền email/mật khẩu/2FA. Không cần dán link, không qua ChatGPT Web và không import 9Router.</div>
+            <div class="config-row">
+              <div class="config-item">
+                <label class="config-label" for="codex-web-workers-input">Luồng chạy đồng thời</label>
+                <div class="config-input-row">
+                  <input id="codex-web-workers-input" type="number" min="1" max="10" step="1" value="3" inputmode="numeric" aria-label="Số luồng đăng nhập Codex" style="width:72px;padding:8px 10px;text-align:center;font-family:var(--mono);font-size:1.1rem;font-weight:700" />
+                  <span class="config-hint">Chrome cùng lúc · tối đa 10</span>
+                </div>
+              </div>
+            </div>
+            <div class="field-help">Có thể chạy nhiều tài khoản; mỗi tài khoản mở một cửa sổ riêng và tự xếp vừa màn hình. Giữ Suite mở để dùng Chrome; “Hủy phiên” đóng toàn bộ phiên này.</div>
+            <div class="web-login-actions">
+              <button class="btn btn-primary" id="btn-codex-web-login">Đăng nhập Codex</button>
+              <button class="btn btn-danger" id="btn-codex-web-stop" style="display:none">Hủy phiên</button>
+            </div>
+            <div class="msg" id="codex-web-msg" role="status" aria-live="polite"></div>
+          </div>
+        </div>
+        <div class="results-stack">
+          <div class="panel"><div class="panel-head"><h2>Phiên đăng nhập Codex</h2></div><div class="panel-body" id="codex-web-results">Chưa có kết quả.</div></div>
+          <div class="panel terminal-panel">
+            <div class="term-titlebar"><span class="term-title">codex-web — retained browser session</span></div>
+            <div class="activity-log" id="codex-web-log"><span class="term-empty"><span class="term-prompt">$</span> Chưa mở phiên Codex Web.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- TAB: Direct ChatGPT Web Login -->
     <section class="tab-content" id="tab-web-login">
-      <div class="workflow-grid">
+      <div class="workflow-grid web-login-workflow-grid">
         <div class="control-stack">
           <div class="control-card">
             <div class="section-label">Danh sách tài khoản <span class="section-hint">email|password|2fa</span></div>
@@ -2155,6 +2201,20 @@
             </div>
             <textarea id="web-login-link-input" rows="2" spellcheck="false" placeholder="https://chatgpt.com/api/auth/session">https://chatgpt.com/api/auth/session</textarea>
             <div class="field-help" id="web-login-link-help">Sau khi đăng nhập, mở URL này trong tab phụ cùng browser.</div>
+            <div class="field-label-row">
+              <label class="field-label" for="web-login-reload-toggle">Tự động reload tab ChatGPT</label>
+              <label class="feature-toggle" for="web-login-reload-toggle">
+                <input type="checkbox" id="web-login-reload-toggle" aria-label="Bật hoặc tắt tự động reload tab ChatGPT" />
+                <span class="toggle-track" aria-hidden="true"></span>
+                <span id="web-login-reload-toggle-text">Tắt</span>
+              </label>
+            </div>
+            <div class="config-input-row">
+              <label for="web-login-reload-seconds">Chờ</label>
+              <input id="web-login-reload-seconds" type="number" min="1" max="3600" step="1" value="10" disabled inputmode="numeric" aria-describedby="web-login-reload-help" style="width:90px;padding:8px 10px;text-align:center;font-family:var(--mono)" />
+              <span class="config-hint">giây sau đăng nhập</span>
+            </div>
+            <div class="field-help" id="web-login-reload-help">Mặc định tắt. Khi bật, reload tab chính một lần rồi giữ mở; không chuyển focus. Áp dụng cho lần chạy mới.</div>
           </div>
           <div class="config-row">
             <div class="config-item">
@@ -3006,6 +3066,14 @@
       syncWebLoginLinkToggle();
       $('web-login-link-toggle').addEventListener('change', () => syncWebLoginLinkToggle(true));
 
+      function syncWebLoginReloadToggle() {
+        const enabled = $('web-login-reload-toggle').checked;
+        $('web-login-reload-seconds').disabled = !enabled;
+        $('web-login-reload-toggle-text').textContent = enabled ? 'Bật' : 'Tắt';
+      }
+      syncWebLoginReloadToggle();
+      $('web-login-reload-toggle').addEventListener('change', syncWebLoginReloadToggle);
+
       function parseWebLoginAccounts() {
         const text = $('web-login-accounts-input').value.trim();
         if (!text) return [];
@@ -3086,6 +3154,15 @@
           openLinkEnabled: webLinkEnabled,
           linkUrl: webLinkEnabled ? $('web-login-link-input').value.trim() : '',
         };
+        const reloadSettings = {
+          reloadEnabled: $('web-login-reload-toggle').checked,
+          reloadSeconds: Number($('web-login-reload-seconds').value),
+        };
+        if (reloadSettings.reloadEnabled && (!Number.isInteger(reloadSettings.reloadSeconds)
+          || reloadSettings.reloadSeconds < 1 || reloadSettings.reloadSeconds > 3600)) {
+          showMsg('web-login-msg', 'Thời gian reload phải là số nguyên từ 1 đến 3600 giây.', 'err');
+          return;
+        }
         if (linkSettings.openLinkEnabled && linkSettings.linkUrl) {
           try {
             const parsed = new URL(linkSettings.linkUrl);
@@ -3112,7 +3189,7 @@
           const response = await fetch(API + '/api/web-login/start', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ accounts: accounts.map(account => account.raw), workers, ...linkSettings }),
+            body: JSON.stringify({ accounts: accounts.map(account => account.raw), workers, ...linkSettings, ...reloadSettings }),
           });
           const data = await response.json();
           if (response.status === 409) {
@@ -3275,9 +3352,7 @@
           const success = result.status === 'success';
           const personalAccountVerified = success && result.personalAccountVerified === true;
           const resultIndex = Number.parseInt(result.index, 10);
-          const flowDetail = result.linkOpened
-            ? (result.chatgptReloaded ? `tab phụ đã mở, tab chính đã reload` : `tab phụ đã mở`)
-            : `ChatGPT đang mở`;
+          const flowDetail = `${result.linkOpened ? 'tab phụ đã mở' : 'ChatGPT đang mở'}${result.chatgptReloaded ? ', tab chính đã reload một lần' : ''}`;
           const detail = success
             ? `${personalAccountVerified ? 'Đã xác minh Personal account' : 'Chưa xác minh Personal account'} · ${flowDetail}`
             : (result.error || 'Login lỗi');
@@ -3402,6 +3477,86 @@
         loadWebAccountHistory();
       }
 
+      // === Codex Web: separate UI, no OAuth token/import endpoints ===
+      let codexWebRunId = '';
+      let codexWebRequestPending = false;
+      let codexWebPolling = false;
+      let codexWebRevision = 0;
+      async function codexWebRequest(path, payload) {
+        const response = await fetch(API + '/api/codex-web/' + path, {
+          ...(payload === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }),
+          signal: AbortSignal.timeout(15000),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Không kết nối được Codex Web');
+        return data;
+      }
+      async function refreshCodexWeb() {
+        if (codexWebPolling || codexWebRequestPending) return;
+        codexWebPolling = true;
+        const revision = codexWebRevision;
+        try {
+          const data = await codexWebRequest('status');
+          // Ignore a status response begun before a start/stop action.
+          if (codexWebRequestPending || revision !== codexWebRevision) return;
+          codexWebRunId = data.runId || '';
+          const busy = Boolean(data.running || data.webReady || data.paused);
+          $('btn-codex-web-login').disabled = busy || Boolean(data.blockedBy);
+          $('btn-codex-web-stop').style.display = busy ? '' : 'none';
+          $('codex-web-results').innerHTML = (data.results || []).map(result =>
+            `<div class="web-result-row"><span>${result.codexOpened ? '✓' : '!'}</span><span class="web-result-email">${esc(result.email)}</span><span class="web-result-status">${esc(result.status !== 'success' ? 'Chưa mở được phiên OAuth' : result.codexOpened ? 'Codex OAuth đã xác thực · tab đang được giữ mở' : 'Tab OAuth đang giữ mở · cần bạn kiểm tra/hoàn tất')}</span>${busy && result.status === 'success' ? `<button type="button" class="btn-compact" data-codex-focus="${Number(result.index) || 0}">Mở tab</button>` : ''}</div>`
+          ).join('') || 'Chưa có kết quả.';
+          $('codex-web-log').textContent = (data.logs || []).map(log => `${log.email || 'system'}: ${log.message}`).join('\n') || 'Chưa mở phiên Codex Web.';
+          $('codex-web-log').style.whiteSpace = 'pre-wrap';
+          if (data.blockedBy) showMsg('codex-web-msg', 'ChatGPT Web đang chạy hoặc giữ Chrome mở. Không thay thế phiên đó; hãy kết thúc khi bạn sẵn sàng.', 'err');
+          else if (busy) showMsg('codex-web-msg', data.completed ? 'Luồng đã xử lý xong và tab vẫn được giữ mở cho bạn thao tác.' : 'Đang xác thực Codex trên auth.openai.com…', 'ok');
+          else if (data.stopped) showMsg('codex-web-msg', 'Phiên Codex Web đã được hủy.', 'ok');
+          else if (data.interrupted) showMsg('codex-web-msg', 'Phiên trước đã bị gián đoạn; kết quả được giữ lại.', 'err');
+        } catch (error) {
+          showMsg('codex-web-msg', error.message, 'err');
+        } finally { codexWebPolling = false; }
+      }
+      $('btn-codex-web-login').addEventListener('click', async () => {
+        if (codexWebRequestPending) return;
+        const accounts = normalizeAllLines($('codex-web-accounts-input').value).split('\n').map(line => line.trim()).filter(line => line && !line.startsWith('#'));
+        const workers = Number.parseInt($('codex-web-workers-input').value, 10);
+        if (!accounts.length || accounts.length > 50 || accounts.some(line => { const parts = line.split('|'); return parts.length < 2 || parts.length > 3 || !parts[0].includes('@') || !parts[1].trim(); })) {
+          showMsg('codex-web-msg', 'Nhập từ 1 đến 50 dòng email|password|2fa hợp lệ.', 'err'); return;
+        }
+        if (!Number.isInteger(workers) || workers < 1 || workers > 10) {
+          showMsg('codex-web-msg', 'Số luồng Codex phải là số nguyên từ 1 đến 10.', 'err'); return;
+        }
+        codexWebRequestPending = true;
+        codexWebRevision++;
+        $('btn-codex-web-login').disabled = true;
+        hideMsg('codex-web-msg');
+        try {
+          const data = await codexWebRequest('start', { accounts, workers });
+          codexWebRunId = data.runId;
+          $('codex-web-accounts-input').value = '';
+          $('codex-web-results').textContent = 'Đang mở Chrome…';
+        } catch (error) {
+          showMsg('codex-web-msg', error.message + ' — kiểm tra trạng thái trước khi chạy lại.', 'err');
+        } finally { codexWebRequestPending = false; await refreshCodexWeb(); }
+      });
+      $('btn-codex-web-stop').addEventListener('click', async () => {
+        if (codexWebRequestPending || !codexWebRunId || !window.confirm('Hủy phiên Codex Web và đóng các cửa sổ Chrome của phiên này?')) return;
+        codexWebRequestPending = true;
+        codexWebRevision++;
+        try { await codexWebRequest('stop', { runId: codexWebRunId }); }
+        catch (error) { showMsg('codex-web-msg', error.message, 'err'); }
+        finally { codexWebRequestPending = false; await refreshCodexWeb(); }
+      });
+      $('codex-web-results').addEventListener('click', async event => {
+        const button = event.target.closest('[data-codex-focus]');
+        if (!button) return;
+        try { await codexWebRequest('focus', { runId: codexWebRunId, index: Number(button.dataset.codexFocus) }); }
+        catch (error) { showMsg('codex-web-msg', error.message, 'err'); }
+      });
+      setInterval(() => {
+        if (!document.hidden && !$('tab-codex-web').classList.contains('hidden')) refreshCodexWeb();
+      }, 1000);
+
       // === Helpers ===
       function showMsg(id, text, type) { const el = $(id); el.textContent = text; el.className = 'msg show ' + type }
       function hideMsg(id) { $(id).className = 'msg' }
@@ -3413,6 +3568,13 @@
           document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
           btn.classList.add('active');
           $('tab-' + btn.dataset.tab).classList.remove('hidden');
+          document.querySelector('.breadcrumb strong').textContent = btn.textContent;
+          document.querySelector('.page-kicker h2').textContent = btn.textContent;
+          document.querySelector('.page-kicker p').textContent = btn.dataset.tab === 'codex-web'
+            ? 'Tự xác thực OAuth Codex, sau đó giữ nguyên tab cho bạn thao tác. Không import 9Router.'
+            : btn.dataset.tab === 'web-login' ? 'Đăng nhập trực tiếp trên web, giữ nguyên từng cửa sổ Chrome.' : 'Chọn thao tác trong màn hình bên dưới.';
+          $('btn-open-history').style.display = btn.dataset.tab === 'web-login' ? '' : 'none';
+          if (btn.dataset.tab === 'codex-web') refreshCodexWeb();
           if (btn.dataset.tab === 'accounts') loadAccounts();
           if (btn.dataset.tab === 'web-login') resumeWebLoginPolling();
         });

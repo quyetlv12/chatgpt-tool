@@ -1,7 +1,11 @@
 """One-use browser handoff. WebAuthn private keys never enter the tool."""
 import secrets
 import time
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, urlencode, urlsplit
+
+
+class PasskeyPreparationError(ValueError):
+    """Fixed, credential-safe enrollment errors suitable for the dashboard."""
 
 
 def validate_passkey_url(url: str) -> str:
@@ -11,15 +15,16 @@ def validate_passkey_url(url: str) -> str:
     query = parse_qs(parsed.query, keep_blank_values=True)
     if (parsed.scheme != "https" or parsed.netloc != "auth.openai.com"
             or parsed.path != "/passkey-enroll" or parsed.fragment
-            or set(query) != {"state"} or len(query["state"]) != 1
-            or not query["state"][0]
-            or any(ord(c) < 32 for c in query["state"][0])):
+            or set(query) != {"origin_app_name", "mfa_token"}
+            or query["origin_app_name"] != ["ChatGPT"]
+            or len(query["mfa_token"]) != 1 or not query["mfa_token"][0]
+            or any(ord(c) <= 32 or ord(c) == 127 for c in query["mfa_token"][0])):
         raise ValueError("Invalid passkey handoff")
     return url
 
 
 async def prepare_passkey_url(*, session_data: dict, timeout: float = 20.0) -> str:
-    """Use the web client's enrollment route; never guess an auth state token."""
+    """Mirror BrowserMfaEnrollPage: request an MFA token, not an HTML redirect."""
     from curl_cffi.requests import AsyncSession
     from user_agent_profile import CURL_IMPERSONATE_PRIMARY, WINDOWS_USER_AGENT
 
@@ -37,15 +42,29 @@ async def prepare_passkey_url(*, session_data: dict, timeout: float = 20.0) -> s
         for cookie in cookies:
             session.cookies.set(cookie["name"], cookie["value"],
                                 domain=cookie["domain"], path=cookie.get("path") or "/")
-        response = await session.get(
-            "https://chatgpt.com/auth/enroll_mfa", params={"factor": "passkey"},
-            headers={"Accept": "text/html", "User-Agent": WINDOWS_USER_AGENT,
-                     "Referer": "https://chatgpt.com/"},
+        response = await session.post(
+            "https://chatgpt.com/backend-api/accounts/mfa/user/request_mfa_token_in_house",
+            headers={"Accept": "application/json", "User-Agent": WINDOWS_USER_AGENT,
+                     "Authorization": f"Bearer {token}", "Content-Type": "application/json",
+                     "Origin": "https://chatgpt.com",
+                     "Referer": "https://chatgpt.com/auth/enroll_mfa?factor=passkey"},
             timeout=timeout, allow_redirects=False,
         )
-    if response.status_code not in {302, 303, 307}:
-        raise ValueError("Passkey enrollment redirect unavailable")
-    return validate_passkey_url(response.headers.get("Location", ""))
+    if response.status_code != 200:
+        raise PasskeyPreparationError(
+            f"OpenAI từ chối bước lấy liên kết passkey (HTTP {response.status_code}). "
+            "Hãy thử lại hoặc mở Settings > Security của ChatGPT."
+        )
+    try:
+        payload = response.json()
+        state_token = payload.get("state_token") if isinstance(payload, dict) else None
+        if not isinstance(state_token, str) or not state_token:
+            raise ValueError("Missing MFA token")
+        return validate_passkey_url("https://auth.openai.com/passkey-enroll?" + urlencode({
+            "origin_app_name": "ChatGPT", "mfa_token": state_token,
+        }))
+    except (TypeError, ValueError) as exc:
+        raise PasskeyPreparationError("OpenAI không trả về liên kết đăng ký passkey hợp lệ.") from exc
 
 
 class PasskeyHandoffs:

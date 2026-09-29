@@ -14,6 +14,13 @@ class WebLoginUiStateTests(unittest.TestCase):
         self.assertIn("Hủy phiên hiện tại", self.html)
         self.assertIn('id="btn-web-stop"', self.html)
 
+    def test_account_editor_is_wider_than_results_and_log_column(self):
+        self.assertIn('class="workflow-grid web-login-workflow-grid"', self.html)
+        self.assertRegex(
+            self.html,
+            r"\.web-login-workflow-grid\s*\{\s*grid-template-columns:\s*minmax\(440px,\s*1\.35fr\)\s*minmax\(360px,\s*0\.9fr\)",
+        )
+
     def test_has_pause_and_resume_control(self):
         self.assertIn('id="btn-web-pause"', self.html)
         self.assertIn("/api/web-login/pause", self.html)

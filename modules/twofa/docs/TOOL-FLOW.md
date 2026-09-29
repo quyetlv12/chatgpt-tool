@@ -271,7 +271,7 @@ init() runs:
 
 1. GET /api/bootstrap.
 2. Store the returned local token, settings, worker health, and snapshots.
-3. Restore twofa.input_draft into the editor.
+3. Restore twofa.input_draft only when at least one 2FA job is still queued or running; otherwise start with an empty editor so an old completed draft cannot look like a newly entered account.
 4. Load settings controls and render editor, connection, queue, counters, and empty output.
 5. If the document is visible, connect EventSource to /api/events?token=....
 6. Fetch /api/output.
@@ -365,7 +365,7 @@ Draft behavior:
 1. Every input event schedules a 450 ms debounce.
 2. The latest editor value is sent through PUT /api/settings as input_draft.
 3. The full settings payload is sent because SettingsRequest is not a partial-update model.
-4. On restart, bootstrap restores the persisted draft.
+4. On restart, bootstrap restores the persisted draft only for a queue with queued/running work; after all work is terminal, the editor starts empty. Typing still saves the draft normally, so a restart during active work preserves it.
 
 The draft contains raw credentials. It is stored as JSON text in settings, while the SettingsRepository audit records only a redacted value for twofa.input_draft.
 
@@ -728,19 +728,23 @@ Logout-all-sessions UI and manager:
 Passkey UI and manager:
 
 1. Shows the action only for a successful Live row with `login_verified=true`.
-2. Requires explicit confirmation, then reauthenticates once and requests the official `/auth/enroll_mfa?factor=passkey` redirect.
-3. Allows only an exact HTTPS `auth.openai.com/passkey-enroll?state=...` URL; no arbitrary host, path, fragment, redirect, or control character is accepted.
+2. Requires explicit confirmation, then reauthenticates once and POSTs `/backend-api/accounts/mfa/user/request_mfa_token_in_house` with the fresh session bearer token and ChatGPT cookies. The complete preparation has one deadline, capped at 180 seconds; it does not retry login.
+3. Requires a valid `state_token` response and constructs only `https://auth.openai.com/passkey-enroll?origin_app_name=ChatGPT&mfa_token=...`; no arbitrary host, path, fragment, redirect, extra parameter, or control character is accepted.
 4. Stores the redirect in a bounded RAM-only one-use handoff for two minutes; the token is consumed before redirect and returns 410 on reuse/expiry.
 5. The browser performs WebAuthn. No private key, credential object, passkey name, token, cookie, or upstream body is persisted or emitted in snapshots/SSE/logs.
 6. The UI says enrollment is not confirmed; it never automatically logs in, changes 2FA, logs out, or updates job/history state.
 7. The pending lock ends when preparation returns. The operator must finish or close the official page before starting other work on the same account; the tool cannot observe external WebAuthn completion.
 
-Protocol evidence (2026-09-27): OpenAI's public web client
-`https://chatgpt.com/cdn/assets/c2675c8c-kvqb1wkq8arc6ki7.js` navigates
-to `/auth/enroll_mfa?factor=passkey`. The authenticated redirect contract is
-tested with synthetic responses only, not verified on a real account in this
-change. Unexpected HTML, login redirects, or changed enrollment URLs fail
-closed rather than guessing new endpoints or reporting success.
+8. The dashboard waits at most the preparation budget plus 30 seconds, retains errors in the dialog, and releases its controls on failure. A client timeout does not cancel server work; server-side same-account guards remain authoritative.
+9. Pure-request login runs in a thread, which asyncio cancellation cannot stop. On deadline/cancellation, preparation waits for that single login to settle before releasing the account lock and never requests an enrollment token afterward. Cleanup can exceed the preparation budget; the UI deadline still releases the dialog controls without declaring the account idle.
+
+Protocol evidence (2026-09-27): the current official `BrowserMfaEnrollPage` in
+`https://chatgpt.com/cdn/assets/async/141188.6e7ea20b77.js` requests the MFA token
+and constructs the enrollment URL as above. `/auth/enroll_mfa?factor=passkey`
+returns an HTTP 200 application shell, not an HTTP redirect. A controlled
+authenticated check confirmed the token endpoint returns HTTP 200 with a
+`state_token`. WebAuthn completion remains operator-controlled and unverified;
+the tool never creates a credential itself. Unexpected responses fail closed.
 
 ## 18. Retry, auto-retry, stop, delete, and clear
 

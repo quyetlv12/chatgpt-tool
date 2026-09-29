@@ -2,9 +2,11 @@ import threading
 import time
 import unittest
 import queue
+import io
 from unittest import mock
 
 import auto_login
+import server
 from auto_login import (
     apply_browser_window_bounds,
     build_web_context_options,
@@ -14,7 +16,6 @@ from auto_login import (
     execute_browser_control_command,
     queue_browser_control_command,
     retry_web_email_step,
-    return_to_chatgpt_and_reload,
     run_web_login_queue,
     select_chatgpt_workspace,
     select_country_region,
@@ -22,18 +23,126 @@ from auto_login import (
 )
 
 
-class FakePage:
-    def __init__(self):
-        self.calls = []
+class WebLoginLinkCommandTests(unittest.TestCase):
+    def test_toggle_survives_server_command_and_worker_cli(self):
+        for enabled, link, expected in (
+            (False, 'https://example.com/stale', ''),
+            (True, 'https://example.com/after-login', 'https://example.com/after-login'),
+            (True, '', ''),
+        ):
+            with self.subTest(enabled=enabled, link=link):
+                url = server.resolve_web_login_link({'openLinkEnabled': enabled, 'linkUrl': link})
+                with mock.patch.object(server, 'AUTO_LOGIN_EXECUTABLE', 'synthetic-worker'):
+                    command = server.build_web_login_command('synthetic.txt', 3, url)
+                with (
+                    mock.patch.object(auto_login.sys, 'argv', command),
+                    mock.patch.object(auto_login.os.path, 'exists', return_value=True),
+                    mock.patch.object(auto_login, 'parse_accounts', return_value=[('demo@example.test', 'synthetic', '')]),
+                    mock.patch.object(auto_login, 'run_web_login_queue', return_value=[]) as run,
+                    mock.patch.object(auto_login.threading, 'Thread'),
+                    mock.patch.object(auto_login, '_kept_browser_sessions', {}),
+                    mock.patch('builtins.open', mock.mock_open()),
+                    mock.patch('sys.stdout', new_callable=io.StringIO),
+                ):
+                    auto_login.main()
+                self.assertEqual(run.call_args.args[3], expected)
 
-    def bring_to_front(self):
-        self.calls.append(("bring_to_front",))
+    def test_queue_without_link_does_not_supply_default_url(self):
+        job = mock.Mock(return_value={'email': 'demo@example.test', 'status': 'success'})
+        with mock.patch('sys.stdout', new_callable=io.StringIO):
+            run_web_login_queue([('demo@example.test', 'synthetic', '')], workers=1, job=job)
+        self.assertEqual(job.call_args.args[4], '')
 
-    def wait_for_timeout(self, milliseconds):
-        self.calls.append(("wait_for_timeout", milliseconds))
+    def test_login_opens_secondary_page_only_with_explicit_url(self):
+        for link in ('', 'https://example.com/after-login'):
+            with self.subTest(link=link):
+                playwright = mock.Mock()
+                context = playwright.chromium.launch.return_value.new_context.return_value
+                with (
+                    mock.patch.object(auto_login, 'sync_playwright') as start,
+                    mock.patch.object(auto_login, 'calculate_window_bounds', return_value={'left': 0, 'top': 0, 'width': 1100, 'height': 800}),
+                    mock.patch.object(auto_login, 'apply_browser_window_bounds', return_value=False),
+                    mock.patch.object(auto_login, 'login_chatgpt_web', return_value=(True, '')),
+                    mock.patch.object(auto_login, 'verify_personal_account_label', return_value=True),
+                    mock.patch.object(auto_login, '_kept_browser_sessions', {}),
+                    mock.patch('sys.stdout', new_callable=io.StringIO),
+                ):
+                    start.return_value.start.return_value = playwright
+                    result = auto_login.login_web_one_account(1, 1, ('demo@example.test', 'synthetic', ''), open_link=link)
+                self.assertEqual(result['status'], 'success')
+                self.assertEqual(context.new_page.call_count, 2 if link else 1)
+                self.assertEqual(result['linkOpened'], bool(link))
+                self.assertFalse(result['chatgptReloaded'])
+                context.new_page.return_value.reload.assert_not_called()
+                context.new_page.return_value.bring_to_front.assert_not_called()
+                context.new_page.return_value.close.assert_not_called()
+                context.close.assert_not_called()
+                playwright.chromium.launch.return_value.close.assert_not_called()
+                playwright.stop.assert_not_called()
+                if link:
+                    context.new_page.return_value.goto.assert_called_once_with(link, wait_until='domcontentloaded', timeout=45000)
+                else:
+                    context.new_page.return_value.goto.assert_not_called()
 
-    def reload(self, **kwargs):
-        self.calls.append(("reload", kwargs))
+
+class RetainedBrowserTests(unittest.TestCase):
+    def test_idle_completed_session_does_not_touch_browser(self):
+        commands = mock.Mock()
+        commands.get.side_effect = queue.Empty
+        entry = {'commands': commands, 'page': mock.Mock(), 'context': mock.Mock(), 'browser': mock.Mock()}
+        sessions = {'test': entry}
+        with (
+            mock.patch.object(auto_login, '_session_shutdown_event') as shutdown,
+            mock.patch.object(auto_login, '_kept_browser_sessions', sessions),
+            mock.patch.object(auto_login, 'execute_browser_control_command') as execute,
+            mock.patch.object(auto_login, 'retained_browser_session_is_alive', return_value=True),
+        ):
+            shutdown.is_set.side_effect = [False, False, True]
+            auto_login.service_retained_browser_commands('test', entry)
+        self.assertEqual(commands.get.call_count, 2)
+        execute.assert_not_called()
+        for key in ('page', 'context', 'browser'):
+            self.assertEqual(entry[key].mock_calls, [])
+        self.assertEqual(sessions, {})
+
+    def test_closed_browser_session_is_removed_and_stops_worker(self):
+        commands = mock.Mock()
+        entry = {
+            'commands': commands,
+            'page': mock.Mock(),
+            'context': mock.Mock(),
+            'browser': mock.Mock(),
+        }
+        entry['browser'].is_connected.return_value = False
+        sessions = {'closed': entry}
+        shutdown = threading.Event()
+        with (
+            mock.patch.object(auto_login, '_session_shutdown_event', shutdown),
+            mock.patch.object(auto_login, '_kept_browser_sessions', sessions),
+        ):
+            auto_login.service_retained_browser_commands('closed', entry)
+        self.assertTrue(shutdown.is_set())
+        self.assertEqual(sessions, {})
+        commands.get.assert_not_called()
+
+    def test_closing_one_of_multiple_sessions_keeps_worker_alive(self):
+        sessions = {}
+        shutdown = threading.Event()
+        first = {'commands': mock.Mock(), 'page': mock.Mock(), 'context': mock.Mock(), 'browser': mock.Mock()}
+        second = {'commands': mock.Mock(), 'page': mock.Mock(), 'context': mock.Mock(), 'browser': mock.Mock()}
+        first['page'].is_closed.return_value = True
+        second['page'].is_closed.return_value = True
+        sessions.update({'first': first, 'second': second})
+        with (
+            mock.patch.object(auto_login, '_session_shutdown_event', shutdown),
+            mock.patch.object(auto_login, '_kept_browser_sessions', sessions),
+        ):
+            auto_login.service_retained_browser_commands('first', first)
+            self.assertFalse(shutdown.is_set())
+            self.assertEqual(set(sessions), {'second'})
+            auto_login.service_retained_browser_commands('second', second)
+        self.assertTrue(shutdown.is_set())
+        self.assertEqual(sessions, {})
 
 
 class FakeWorkspaceLocator:
@@ -106,25 +215,6 @@ class FakePageWithUnrelatedCaption(FakePersonalAccountPage):
         return FakeJSHandle(self.calls)
 
 
-class ReturnToChatGPTTests(unittest.TestCase):
-    def test_focuses_chatgpt_waits_five_seconds_then_reloads(self):
-        page = FakePage()
-
-        return_to_chatgpt_and_reload(page)
-
-        self.assertEqual(
-            page.calls,
-            [
-                ("bring_to_front",),
-                ("wait_for_timeout", 5000),
-                (
-                    "reload",
-                    {"wait_until": "domcontentloaded", "timeout": 45000},
-                ),
-            ],
-        )
-
-
 class PersonalAccountVerificationTests(unittest.TestCase):
     def test_accepts_exact_personal_account_label_after_waiting_for_element(self):
         page = FakePersonalAccountPage("  Personal account\n")
@@ -186,28 +276,25 @@ class BrowserWindowLayoutTests(unittest.TestCase):
         self.assertGreaterEqual(bounds["top"], 70)
         self.assertLessEqual(bounds["top"] + bounds["height"], 1040)
 
-    def test_two_accounts_stack_top_and_bottom_like_reference(self):
+    def test_two_accounts_share_screen_in_two_columns(self):
         first = calculate_window_bounds(1, 2, screen_width=2048, screen_height=1152)
         second = calculate_window_bounds(2, 2, screen_width=2048, screen_height=1152)
 
-        self.assertEqual(first["left"], second["left"])
-        self.assertEqual(first["width"], second["width"])
-        self.assertLessEqual(first["top"] + first["height"], second["top"])
-        self.assertEqual(first["width"], 2028)
-        self.assertEqual(first["height"], 507)
+        self.assertLessEqual(first["left"] + first["width"], second["left"])
+        self.assertEqual(first["top"], second["top"])
+        self.assertEqual(first["width"], 1009)
+        self.assertEqual(first["height"], 1024)
 
-    def test_three_accounts_always_stack_in_three_full_width_rows(self):
+    def test_three_accounts_share_a_wide_screen_in_three_columns(self):
         bounds = [
             calculate_window_bounds(index, 3, screen_width=3560, screen_height=1152)
             for index in range(1, 4)
         ]
 
-        self.assertTrue(all(item["left"] == 10 for item in bounds))
-        self.assertTrue(all(item["width"] == 3540 for item in bounds))
-        self.assertEqual([item["top"] for item in bounds], [44, 388, 732])
-        self.assertTrue(all(item["height"] == 334 for item in bounds))
-        for first, second in zip(bounds, bounds[1:]):
-            self.assertLessEqual(first["top"] + first["height"], second["top"])
+        self.assertEqual([item["left"] for item in bounds], [10, 1193, 2376])
+        self.assertTrue(all(item["top"] == 44 for item in bounds))
+        self.assertTrue(all(item["width"] == 1173 for item in bounds))
+        self.assertTrue(all(item["height"] == 1024 for item in bounds))
 
     def test_web_context_uses_tile_as_desktop_viewport(self):
         options = build_web_context_options({"width": 877, "height": 507})
@@ -389,7 +476,7 @@ class BrowserControlTests(unittest.TestCase):
 
         self.assertEqual(queued, 15)
         bounds = [commands.get_nowait()["bounds"] for commands in command_queues]
-        self.assertTrue(all(item["height"] == 507 for item in bounds))
+        self.assertTrue(all(item["height"] == 1024 for item in bounds))
         self.assertEqual(
             {item["top"] for item in bounds},
             {
@@ -439,6 +526,9 @@ class WebLoginQueueTests(unittest.TestCase):
             attempt,
             layout_index=None,
             layout_total=None,
+            reload_after=None,
+            codex_web=False,
+            desktop_auth_url=None,
         ):
             with lock:
                 if layout_index in active_slots:

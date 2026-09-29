@@ -74,9 +74,9 @@ REDIRECT_URI = f"http://localhost:{CALLBACK_PORT}/auth/callback"
 IMPORT_API = os.environ.get("SHOPTAIKHOAN_IMPORT_API", "http://localhost:9876/api/import")
 CHATGPT_URL = "https://chatgpt.com/"
 CHATGPT_LOGIN_URL = "https://chatgpt.com/auth/login"
-DEFAULT_WEB_LINK = "https://chatgpt.com/api/auth/session"
+DEFAULT_WEB_LINK = ""  # Only an explicit --open-link enables the secondary tab.
 DESKTOP_USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-MIN_DESKTOP_WINDOW_WIDTH = 1100
+MIN_DESKTOP_WINDOW_WIDTH = 900
 MIN_BATCH_SCREEN_WIDTH = 1600
 MIN_BROWSER_VIEWPORT_HEIGHT = 120
 SINGLE_WINDOW_VERTICAL_PADDING = 32
@@ -179,7 +179,7 @@ def calculate_window_bounds(index, total, screen_width=None, screen_height=None)
     screen_aspect = screen_width / usable_height
     ideal_columns = max(1, int(round(math.sqrt(total * screen_aspect))))
     desktop_columns = max(1, (screen_width - gap) // (MIN_DESKTOP_WINDOW_WIDTH + gap))
-    columns = 1 if total <= 3 else min(total, ideal_columns, desktop_columns)
+    columns = min(total, ideal_columns, desktop_columns)
     if total >= 4 and screen_width >= MIN_BATCH_SCREEN_WIDTH:
         columns = max(columns, min(total, 2))
     rows = int(math.ceil(total / columns))
@@ -328,17 +328,63 @@ def execute_browser_control_command(entry, command):
     return False
 
 
+def retained_browser_session_is_alive(entry):
+    """Return whether a retained Playwright session still has a live browser.
+
+    Playwright objects can raise when their browser process has been closed, so
+    this check deliberately treats those exceptions as a dead session.  The
+    explicit ``is True``/``is False`` checks also keep test doubles and older
+    Playwright implementations that do not expose these methods compatible.
+    """
+    browser = entry.get("browser")
+    if browser is not None:
+        is_connected = getattr(browser, "is_connected", None)
+        if callable(is_connected):
+            try:
+                if is_connected() is False:
+                    return False
+            except Exception:
+                return False
+
+    page = entry.get("page")
+    if page is not None:
+        is_closed = getattr(page, "is_closed", None)
+        if callable(is_closed):
+            try:
+                if is_closed() is True:
+                    return False
+            except Exception:
+                return False
+
+    # A browser context can disappear without the page method becoming
+    # observable first.  Only inspect concrete page lists; mocks and custom
+    # context wrappers should not be interpreted as an empty list.
+    context = entry.get("context")
+    try:
+        pages = getattr(context, "pages", None) if context is not None else None
+        if isinstance(pages, (list, tuple)) and page is not None and page not in pages:
+            return False
+    except Exception:
+        return False
+    return True
+
+
 def service_retained_browser_commands(session_key, entry):
     """Keep a retained Playwright browser responsive to UI commands."""
     commands = entry["commands"]
     while not _session_shutdown_event.is_set():
+        if not retained_browser_session_is_alive(entry):
+            break
         try:
             command = commands.get(timeout=0.25)
         except queue.Empty:
             continue
         execute_browser_control_command(entry, command)
     with _kept_sessions_lock:
-        _kept_browser_sessions.pop(session_key, None)
+        if _kept_browser_sessions.get(session_key) is entry:
+            _kept_browser_sessions.pop(session_key, None)
+        if not _kept_browser_sessions:
+            _session_shutdown_event.set()
 
 
 def listen_for_browser_control_commands(stream=None):
@@ -381,6 +427,26 @@ def build_auth_url():
         "id_token_add_organizations": "true",
         "codex_cli_simplified_flow": "true",
         "originator": "codex_cli_rs",
+    }
+    return AUTH_URL + "?" + urlencode(params), verifier, state
+
+
+def build_codex_auth_url():
+    """Build a fresh Codex OAuth URL; this tool owns the PKCE transaction."""
+    verifier, challenge = generate_pkce()
+    state = secrets.token_urlsafe(16)
+    params = {
+        "response_type": "code",
+        "client_id": CLIENT_ID,
+        "redirect_uri": REDIRECT_URI,
+        "scope": "openid profile email offline_access api.connectors.read api.connectors.invoke",
+        "code_challenge": challenge,
+        "code_challenge_method": "S256",
+        "id_token_add_organizations": "true",
+        "codex_cli_simplified_flow": "true",
+        "codex_streamlined_login": "true",
+        "state": state,
+        "originator": "Codex Desktop",
     }
     return AUTH_URL + "?" + urlencode(params), verifier, state
 
@@ -1654,6 +1720,104 @@ def login_one_account(index, total, account, headed, slow):
     return {"email": email, "status": "error", "error": last_error or "Unknown login error"}
 
 
+def login_codex_authorization(page, email, password, totp_secret, index=0):
+    """Complete Codex OAuth in this browser and leave the authenticated tab open."""
+    auth_url, _verifier, state = build_codex_auth_url()
+
+    def callback_received():
+        parsed = urlparse(page.url)
+        if parsed.hostname not in ("localhost", "127.0.0.1") or parsed.path != "/auth/callback":
+            return False
+        params = parse_qs(parsed.query)
+        return params.get("state", [None])[0] == state and bool(params.get("code", [None])[0]) and not params.get("error")
+    def on_auth_host():
+        parsed = urlparse(page.url)
+        return parsed.scheme == "https" and parsed.netloc == "auth.openai.com"
+
+    def auth_stage():
+        # Do not treat merely visiting a URL as successful authentication.
+        if not on_auth_host():
+            return None
+        path = urlparse(page.url).path
+        for kind, selector in (
+            ("otp", 'input[autocomplete="one-time-code"], input[name="code"]'),
+            ("password", 'input[type="password"]'),
+            ("email", 'input[type="email"], input[name="email"], input[name="username"]'),
+        ):
+            field = page.locator(selector).first
+            if field.is_visible():
+                return kind, field
+        if "consent" in path or "authorize" in path:
+            for selector in ('button:has-text("Allow")', 'button:has-text("Authorize")', 'button:has-text("Continue")'):
+                if page.locator(selector).first.is_visible():
+                    return "consent"
+        return None
+
+    try:
+        emit_web_phase(email, index, "codex_authorize", "Đang mở OAuth authorize của Codex trên auth.openai.com")
+        page.goto(auth_url, wait_until="domcontentloaded", timeout=45000)
+        sent = set()
+        deadline = time.monotonic() + 60
+        while time.monotonic() < deadline and not _session_shutdown_event.is_set():
+            stage = auth_stage()
+            if stage == "consent":
+                emit_web_phase(email, index, "codex_consent", "Đang xác nhận quyền Codex trên auth.openai.com")
+                clicked = False
+                for selector in ('button:has-text("Allow")', 'button:has-text("Authorize")', 'button:has-text("Continue")'):
+                    button = page.locator(selector).first
+                    if button.is_visible():
+                        clicked = True
+                        try:
+                            button.click()
+                        except Exception:
+                            # localhost:1455 intentionally has no listener in Codex mode;
+                            # Chromium may report the refused navigation after updating page.url.
+                            pass
+                        break
+                if not clicked:
+                    break
+                deadline = time.monotonic() + 30
+                while time.monotonic() < deadline and not _session_shutdown_event.is_set():
+                    if callback_received():
+                        emit_web_phase(email, index, "codex_authenticated", "Codex OAuth đã xác thực; giữ nguyên tab để bạn thao tác")
+                        return True
+                    page.wait_for_timeout(250)
+                if callback_received():
+                    emit_web_phase(email, index, "codex_authenticated", "Codex OAuth đã xác thực; giữ nguyên tab để bạn thao tác")
+                    return True
+                break
+            if stage:
+                kind, field = stage
+                if kind not in sent:
+                    if kind == "otp" and not totp_secret:
+                        break
+                    value = email if kind == "email" else password if kind == "password" else pyotp.TOTP(
+                        re.sub(r"\s+", "", totp_secret).upper()
+                    ).now()
+                    if not on_auth_host():
+                        break
+                    field.fill(value)
+                    if not on_auth_host():
+                        break
+                    # Submit only the credential form, never a generic consent button.
+                    field.press("Enter")
+                    sent.add(kind)
+                    emit_web_phase(email, index, "codex_" + kind,
+                                   {"email": "Đã gửi email OAuth", "password": "Đã gửi mật khẩu trên trang auth", "otp": "Đã gửi mã 2FA"}[kind])
+            current = urlparse(page.url)
+            if current.hostname in ("localhost", "127.0.0.1"):
+                if callback_received():
+                    return True
+                break
+            if current.scheme != "https" or current.netloc != "auth.openai.com":
+                break  # Hand off SSO/verification/other pages without sending credentials.
+            page.wait_for_timeout(250)
+    except Exception:
+        pass  # URL, form values, authorization codes and screenshots never enter logs.
+    emit_web_phase(email, index, "codex_manual", "Giữ tab OAuth để bạn kiểm tra hoặc hoàn tất xác thực Codex.")
+    return False
+
+
 def login_web_one_account(
     index,
     total,
@@ -1664,8 +1828,12 @@ def login_web_one_account(
     attempt=1,
     layout_index=None,
     layout_total=None,
+    reload_after=None,
+    codex_web=False,
 ):
     """Run one clean direct-login attempt and retain a successful browser."""
+    if codex_web:
+        open_link, reload_after = "", None
     email, password, totp_secret = account
     emit_event("START", email, index=index, total=total, attempt=attempt)
     print("[{}/{}] {} | attempt {}".format(index, total, email, attempt), flush=True)
@@ -1704,7 +1872,7 @@ def login_web_one_account(
         pw = sync_playwright().start()
         try:
             browser = pw.chromium.launch(channel="chrome", **launch_kwargs)
-            print("    Browser: Google Chrome | direct ChatGPT web", flush=True)
+            print("    Browser: Google Chrome | {}".format("Codex OAuth" if codex_web else "direct ChatGPT web"), flush=True)
         except Exception as error:
             print("    [!] Chrome unavailable, fallback Chromium: {}".format(error), flush=True)
             browser = pw.chromium.launch(**launch_kwargs)
@@ -1723,22 +1891,18 @@ def login_web_one_account(
                     window_bounds["height"],
                 ),
             )
-        ok, error = login_chatgpt_web(
-            page,
-            email,
-            password,
-            totp_secret,
-            attempt=attempt,
-            index=index,
-        )
+        codex_opened = False
+        if codex_web:
+            codex_opened = login_codex_authorization(page, email, password, totp_secret, index=index)
+            ok, error = True, None  # Retain even a manual-check/error page; never replay OAuth.
+        else:
+            ok, error = login_chatgpt_web(page, email, password, totp_secret, attempt=attempt, index=index)
         if not ok:
             print("    ❌ {}".format(error), flush=True)
             return finish({"email": email, "status": "error", "error": error, "index": index})
 
         link_page = None
         link_error = None
-        chatgpt_reload_error = None
-        personal_account_verified = False
         if open_link:
             try:
                 emit_web_phase(email, index, "open_link", "Đang mở tab phụ")
@@ -1750,26 +1914,27 @@ def login_web_one_account(
                 link_error = str(error)
                 print("WEB_LINK_FAIL|{}|{}|{}".format(email, open_link, link_error.replace("|", "/")), flush=True)
                 emit_web_phase(email, index, "link_error", "Tab phụ mở không thành công")
-            if link_page:
+        reloaded = False
+        reload_error = ""
+        if reload_after is not None:
+            emit_web_phase(email, index, "reload_wait", "Chờ {} giây để reload tab ChatGPT một lần".format(reload_after))
+            if not _session_shutdown_event.wait(reload_after):
                 try:
-                    print("WEB_CHATGPT_FOCUS|{}".format(email), flush=True)
-                    emit_web_phase(email, index, "reload_wait", "Quay lại ChatGPT, chờ 5 giây để reload")
-                    return_to_chatgpt_and_reload(page)
+                    page.reload(wait_until="domcontentloaded", timeout=45000)
+                    reloaded = True
                     print("WEB_CHATGPT_RELOAD|{}".format(email), flush=True)
-                    emit_web_phase(email, index, "reloaded", "Tab ChatGPT đã reload")
+                    emit_web_phase(email, index, "reloaded", "Đã reload tab ChatGPT một lần; giữ tab để bạn sử dụng")
                 except Exception as error:
-                    chatgpt_reload_error = str(error)
-                    print("WEB_CHATGPT_RELOAD_FAIL|{}|{}".format(email, chatgpt_reload_error.replace("|", "/")), flush=True)
-        if not chatgpt_reload_error:
+                    reload_error = type(error).__name__
+                    emit_web_phase(email, index, "reload_error", "Không reload được; giữ nguyên phiên đăng nhập, không thử lại")
+        personal_account_verified = False
+        if not codex_web:
             emit_web_phase(email, index, "personal_account_check", "Đang kiểm tra nhãn Personal account")
             personal_account_verified = verify_personal_account_label(page)
-            emit_web_phase(
-                email,
-                index,
-                "personal_account_verified" if personal_account_verified else "personal_account_unverified",
-                "Đã xác minh Personal account" if personal_account_verified else "Chưa xác minh Personal account",
-            )
-        print("WEB_OPEN|{}|{}".format(email, CHATGPT_URL), flush=True)
+            emit_web_phase(email, index,
+                           "personal_account_verified" if personal_account_verified else "personal_account_unverified",
+                           "Đã xác minh Personal account" if personal_account_verified else "Chưa xác minh Personal account")
+        print("WEB_OPEN|{}|{}".format(email, "Codex OAuth" if codex_web else CHATGPT_URL), flush=True)
         command_queue = queue.Queue()
         session_entry = {
             "email": email,
@@ -1795,9 +1960,10 @@ def login_web_one_account(
             "linkOpened": bool(link_page),
             "linkUrl": open_link,
             "linkError": link_error or "",
-            "chatgptReloaded": bool(link_page) and not chatgpt_reload_error,
-            "chatgptReloadError": chatgpt_reload_error or "",
+            "chatgptReloaded": reloaded,
+            "chatgptReloadError": reload_error,
             "personalAccountVerified": personal_account_verified,
+            "codexOpened": codex_opened,
         }
         emit_event(
             "SUCCESS",
@@ -1807,6 +1973,7 @@ def login_web_one_account(
             link="yes" if link_page else "no",
             reloaded="yes" if result["chatgptReloaded"] else "no",
             personal="yes" if result["personalAccountVerified"] else "no",
+            codex="yes" if codex_opened else "no",
         )
         finish(result)
 
@@ -1846,6 +2013,8 @@ def run_web_login_queue(
     job=None,
     retry_delay=3,
     retry_max_delay=30,
+    reload_after=None,
+    codex_web=False,
 ):
     """Retry failed accounts until all succeed while preserving bounded concurrency."""
     if not accounts:
@@ -1890,6 +2059,8 @@ def run_web_login_queue(
                     *common_args,
                     layout_index=layout_index,
                     layout_total=active_limit,
+                    reload_after=reload_after,
+                    codex_web=codex_web,
                 )
             else:
                 result = login_job(*common_args)
@@ -1943,7 +2114,10 @@ def run_web_login_queue(
 
         active_attempts = max(0, active_attempts - 1)
         available_layout_slots.append(layout_index)
-        if result.get("status") == "success":
+        if result.get("status") == "success" or codex_web:
+            if codex_web and result.get("status") != "success":
+                emit_event("ERROR", accounts[result_index][0], index=result_index + 1,
+                           error="Xác thực Codex chưa hoàn tất; hãy kiểm tra tab đang mở")
             results[result_index] = result
             completed += 1
             continue
@@ -1976,13 +2150,6 @@ def run_web_login_queue(
     return results
 
 
-def return_to_chatgpt_and_reload(page):
-    """Return focus to the original ChatGPT tab, pause, then refresh it."""
-    page.bring_to_front()
-    page.wait_for_timeout(5000)
-    page.reload(wait_until="domcontentloaded", timeout=45000)
-
-
 def main():
     if len(sys.argv) < 2:
         print("Usage: python auto_login.py accounts.txt [--headed] [--slow] [--workers N] [--web-only]")
@@ -1990,7 +2157,17 @@ def main():
     accounts_file = sys.argv[1]
     headed = "--headed" in sys.argv or "--show" in sys.argv
     slow = "--slow" in sys.argv
-    web_only = "--web-only" in sys.argv
+    codex_web = "--codex-web" in sys.argv
+    web_only = "--web-only" in sys.argv or codex_web
+    reload_after = None
+    if "--reload-after" in sys.argv:
+        try:
+            reload_after = int(sys.argv[sys.argv.index("--reload-after") + 1])
+            if not 1 <= reload_after <= 3600:
+                raise ValueError()
+        except (ValueError, IndexError):
+            print("[!] --reload-after requires an integer from 1 to 3600 seconds")
+            sys.exit(1)
     open_link = DEFAULT_WEB_LINK
     if "--open-link" in sys.argv or "--web-link" in sys.argv:
         link_flag = "--open-link" if "--open-link" in sys.argv else "--web-link"
@@ -2020,13 +2197,17 @@ def main():
     if not accounts:
         print("[!] No accounts found in file")
         sys.exit(1)
+    if codex_web and (workers > 10 or not 1 <= len(accounts) <= 50):
+        print("[!] Codex login supports 1-50 accounts and 1-10 concurrent workers")
+        sys.exit(1)
 
     active_workers = min(workers, len(accounts))
     print("=" * 55)
     print("  Auto-Login ChatGPT → 9router (parallel OAuth PKCE)")
     print("=" * 55)
     print("  Accounts: {} | Workers requested: {} | Running: {}".format(len(accounts), workers, active_workers))
-    print("  Mode: {} | Flow: {}".format("headed" if headed else "headless", "ChatGPT Web only" if web_only else "Codex OAuth + 9router import"))
+    flow = "Codex OAuth only" if codex_web else "ChatGPT Web only" if web_only else "Codex OAuth + 9router import"
+    print("  Mode: {} | Flow: {}".format("headed" if headed else "headless", flow))
     print("=" * 55, flush=True)
 
     results = []
@@ -2037,7 +2218,7 @@ def main():
             name="browser-control-listener",
             daemon=True,
         ).start()
-        results = run_web_login_queue(accounts, active_workers, slow, open_link)
+        results = run_web_login_queue(accounts, active_workers, slow, open_link, reload_after=reload_after, codex_web=codex_web)
     else:
         start_callback_dispatcher()
         try:
@@ -2072,8 +2253,11 @@ def main():
             print("WEB_READY|{}".format(kept_count), flush=True)
             print("  ChatGPT web sessions are open. Use Stop in the manager to close them.", flush=True)
             try:
-                while True:
-                    time.sleep(1)
+                while not _session_shutdown_event.wait(1):
+                    with _kept_sessions_lock:
+                        if not _kept_browser_sessions:
+                            _session_shutdown_event.set()
+                            break
             except KeyboardInterrupt:
                 _session_shutdown_event.set()
 

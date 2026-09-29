@@ -221,6 +221,31 @@ class WebLoginHistoryTests(unittest.TestCase):
             with server._web_login_lock:
                 server._web_login_status = previous
 
+    def test_worker_finalization_clears_closed_retained_session_marker(self):
+        previous = server.get_web_login_status()
+        try:
+            status = server.new_web_login_status(1, 1, "", run_id="closed-browser")
+            status["running"] = True
+            status["webReady"] = True
+            status["webSessions"] = 1
+            status["done"] = 1
+            with server._web_login_lock:
+                server._web_login_status = status
+
+            server.finalize_web_login_status(status)
+
+            self.assertFalse(status["running"])
+            self.assertFalse(status["webReady"])
+            self.assertEqual(status["webSessions"], 0)
+            with mock.patch.object(server, "persist_web_login_status"), mock.patch.object(
+                server.threading.Thread,
+                "start",
+            ):
+                self.assertTrue(server.start_web_login(["safe@example.com|password|"], 1, ""))
+        finally:
+            with server._web_login_lock:
+                server._web_login_status = previous
+
     def test_start_response_state_has_a_fresh_run_id_and_empty_results(self):
         previous = server.get_web_login_status()
         try:
@@ -320,12 +345,14 @@ class WebLoginHistoryTests(unittest.TestCase):
             server,
             "build_auto_login_command",
             return_value=[sys.executable, str(fake_worker)],
-        ):
+        ), mock.patch.object(server, "build_web_login_command", wraps=server.build_web_login_command) as command:
             server._web_login_worker(
                 ["safe@example.com|private-password|PRIVATE2FA"],
                 workers=1,
                 link_url="https://example.com/path",
+                reload_after=37,
             )
+        self.assertEqual(command.call_args.kwargs['reload_after'], 37)
 
         status = server.get_web_login_status()
         serialized = json.dumps({

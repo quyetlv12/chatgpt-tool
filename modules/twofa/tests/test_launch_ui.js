@@ -13,5 +13,27 @@ assert.match(source, /api\('\/api\/jobs',\s*\{[\s\S]*timeoutMs:\s*LAUNCH_REQUEST
 assert.match(source, /api\('\/api\/settings',\s*\{[\s\S]*timeoutMs:\s*LAUNCH_REQUEST_TIMEOUT_MS/);
 assert.match(source, /error\?\.name === 'AbortError'/);
 assert.match(source, /Khởi chạy quá thời gian chờ/);
+assert.match(source, /const hasActiveJobs = data\.jobs\.some\(\(job\) => \['queued', 'running'\]\.includes\(job\.status\)\)/);
+assert.match(source, /hasActiveJobs \? String\(state\.settings\['twofa\.input_draft'\] \|\| ''\) : ''/);
+
+const vm = require('node:vm');
+const restoreDraft = source.slice(source.indexOf('      const hasActiveJobs ='), source.indexOf('      loadSettingsForm(); updateEditor();'));
+for (const [statuses, draft, expected] of [
+  [[], '', ''],
+  [[], 'synthetic draft', ''],
+  [['success'], 'synthetic draft', ''],
+  [['error', 'cancelled'], 'synthetic draft', ''],
+  [['queued'], 'synthetic draft', 'synthetic draft'],
+  [['success', 'running'], 'synthetic draft', 'synthetic draft'],
+  [['running'], '', ''],
+]) {
+  const input = { value: '' };
+  vm.runInNewContext(restoreDraft, {
+    data: { jobs: statuses.map(status => ({ status })) },
+    state: { settings: { 'twofa.input_draft': draft } },
+    $: () => input,
+  });
+  assert.equal(input.value, expected);
+}
 
 console.log('launch UI timeout contract passed');

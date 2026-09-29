@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const state = { token: '', jobs: new Map(), filter: 'all', settings: {}, workerHealth: null, connection: 'offline', events: null, eventBatcher: null, output: '', draftTimer: null, pendingLaunch: null, pendingChangeJobId: null, pendingDeleteChatsJobId: null, pendingLogoutJobId: null, pendingPasskeyJobId: null, passkeyPreparing: false, logoutPending: false, pendingRowChangeResults: new Set(), pendingRechecks: new Set(), activeChangeResultJobId: null, twofaHistory: [], clearAllPending: false };
+  const state = { token: '', jobs: new Map(), filter: 'all', settings: {}, workerHealth: null, connection: 'offline', events: null, eventBatcher: null, output: '', draftTimer: null, pendingLaunch: null, pendingChangeJobId: null, pendingDeleteChatsJobId: null, pendingLogoutJobId: null, pendingPasskeyJobId: null, passkeyPreparing: false, passkeyWindow: null, logoutPending: false, pendingRowChangeResults: new Set(), pendingRechecks: new Set(), activeChangeResultJobId: null, twofaHistory: [], clearAllPending: false };
   const LAUNCH_REQUEST_TIMEOUT_MS = 15000;
   const $ = (id) => document.getElementById(id);
   const icon = (name) => `<svg class="ui-icon" aria-hidden="true" focusable="false"><use href="/assets/tabler-icons.svg?v=1.0.3#ti-${name}"></use></svg>`;
@@ -52,7 +52,7 @@
         try { message = (await response.json()).detail || message; } catch (_) { /* plain error */ }
         throw new Error(message);
       }
-      return response.headers.get('content-type')?.includes('json') ? response.json() : response.text();
+      return await (response.headers.get('content-type')?.includes('json') ? response.json() : response.text());
     } finally {
       if (timeout) clearTimeout(timeout);
     }
@@ -521,40 +521,86 @@
     $('passkey-confirm').showModal();
   }
 
+  function preparePasskeyWindow() {
+    try {
+      // Open synchronously from the confirmation click so popup blockers treat
+      // the later OpenAI redirect as part of the user's explicit action.
+      const popup = window.open('about:blank', '_blank');
+      if (popup && !popup.closed) {
+        try { popup.opener = null; } catch (_) { /* browser may expose it read-only */ }
+        return popup;
+      }
+    } catch (_) { /* use the visible manual-link fallback */ }
+    return null;
+  }
+
+  function navigatePasskeyWindow(popup, launchPath) {
+    if (!popup || popup.closed) return false;
+    try {
+      popup.location.href = new URL(launchPath, window.location.origin).href;
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   async function confirmPasskey() {
     const id = state.pendingPasskeyJobId;
     const current = id ? state.jobs.get(id) : null;
     if (!id || !current || state.passkeyPreparing || isPasskeyPreparing(current)) return;
     state.passkeyPreparing = true;
     const launch = $('passkey-open');
+    state.passkeyWindow = preparePasskeyWindow();
     launch.hidden = true;
     launch.removeAttribute('href');
     state.jobs.set(id, { ...current, passkey_preparing: true });
     const button = $('passkey-confirm-action');
+    const timeoutSeconds = Math.min(Number(state.settings['twofa.job_timeout']) || 180, 180);
+    let responseLost = false;
     button.disabled = true;
     $('passkey-cancel').disabled = true;
     button.innerHTML = `${icon('loader-2')}<span>Đang chuẩn bị…</span>`;
-    render();
+    $('passkey-note').textContent = `Đang đăng nhập lại và lấy liên kết đăng ký từ OpenAI (giới hạn ${timeoutSeconds} giây; kết nối đang chạy có thể cần thêm thời gian để dừng). Chưa thêm passkey; không chạy thao tác khác trên tài khoản này.`;
     try {
+      render();
       const data = await api(`/api/jobs/${encodeURIComponent(id)}/passkey/start`, {
         method: 'POST', body: JSON.stringify({ confirm: 'ADD_PASSKEY' }),
+        timeoutMs: (timeoutSeconds + 30) * 1000,
       });
       if (!/^\/api\/passkey\/launch\/[A-Za-z0-9_-]{43}$/.test(data.launch_path)) {
         throw new Error('Liên kết passkey không hợp lệ.');
       }
-      launch.href = data.launch_path;
-      launch.hidden = false;
-      $('passkey-note').textContent = 'Liên kết dùng một lần, hết hạn sau 2 phút. Hoàn tất trên trang OpenAI rồi đóng trang đó trước khi chạy thao tác khác. Tool chưa xác nhận đã thêm passkey.';
-      toast('Đã chuẩn bị bước thêm passkey. Hãy hoàn tất trên trang OpenAI.');
+      const openedAutomatically = navigatePasskeyWindow(state.passkeyWindow, data.launch_path);
+      state.passkeyWindow = null;
+      if (openedAutomatically) {
+        launch.hidden = true;
+        launch.removeAttribute('href');
+        $('passkey-note').textContent = 'Đã tự mở tab OpenAI. Hoàn tất passkey trên tab đó rồi đóng trang trước khi chạy thao tác khác. Tool chưa xác nhận đã thêm passkey.';
+        toast('Đã tự mở tab OpenAI để hoàn tất passkey.');
+      } else {
+        launch.href = data.launch_path;
+        launch.hidden = false;
+        $('passkey-note').textContent = 'Trình duyệt đã chặn mở tab tự động. Bấm liên kết bên dưới để mở OpenAI; hoàn tất rồi đóng trang trước khi chạy thao tác khác. Tool chưa xác nhận đã thêm passkey.';
+        toast('Trình duyệt chặn popup; hãy bấm liên kết OpenAI để tiếp tục.', 'error');
+      }
     } catch (error) {
-      toast(error.message, 'error');
+      responseLost = error?.name === 'AbortError' || error instanceof TypeError;
+      const message = error?.name === 'AbortError'
+        ? 'Chuẩn bị passkey quá thời gian chờ. Chưa xác nhận kết quả; chờ tài khoản hết trạng thái chuẩn bị trước khi thử lại.'
+        : error.message;
+      $('passkey-note').textContent = message;
+      toast(message, 'error');
     } finally {
       const latest = state.jobs.get(id);
-      if (latest) state.jobs.set(id, { ...latest, passkey_preparing: false });
+      if (latest && !responseLost) state.jobs.set(id, { ...latest, passkey_preparing: false });
       state.passkeyPreparing = false;
       button.disabled = false;
       $('passkey-cancel').disabled = false;
       button.innerHTML = `${icon('fingerprint')}<span>Chuẩn bị thêm passkey</span>`;
+      if (state.passkeyWindow && !state.passkeyWindow.closed) {
+        try { state.passkeyWindow.close(); } catch (_) { /* best effort */ }
+      }
+      state.passkeyWindow = null;
       render();
     }
   }
@@ -1107,8 +1153,9 @@
     try {
       const data = await fetch('/api/bootstrap').then((response) => response.json());
       state.token = data.token; state.settings = data.settings; state.workerHealth = data.worker_health; state.connection = 'online';
-      $('combo-input').value = String(state.settings['twofa.input_draft'] || '');
       data.jobs.forEach((job) => state.jobs.set(job.id, job));
+      const hasActiveJobs = data.jobs.some((job) => ['queued', 'running'].includes(job.status));
+      $('combo-input').value = hasActiveJobs ? String(state.settings['twofa.input_draft'] || '') : '';
       loadSettingsForm(); updateEditor(); scrollEditorToTop(true); renderConnection(); render(); renderOutput(); syncEventVisibility(); await refreshOutput();
     } catch (_) { state.connection = 'offline'; renderConnection(); toast('Không kết nối được localhost :5033', 'error'); }
   }

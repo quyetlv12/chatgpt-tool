@@ -14,8 +14,52 @@ assert.match(html,/\/assets\/tabler-icons\.svg\?v=1\.0\.3#ti-/);
 assert.match(html,/id="passkey-confirm"[^>]*aria-labelledby="passkey-title"/);
 assert.match(html,/id="passkey-open"[^>]*target="_blank"[^>]*rel="noopener noreferrer"/);
 assert.match(app,/removeAttribute\('href'\)/);
+assert.match(app,/window\.open\('about:blank', '_blank'\)/);
+assert.match(app,/Đã tự mở tab OpenAI/);
+assert.match(app,/Trình duyệt đã chặn mở tab tự động/);
 assert.match(html,/Chưa xác nhận đã thêm passkey/);
 assert.match(html,/Touch ID\/Face ID/);
 assert.match(html,/Advanced Account Security/);
 assert.doesNotMatch(app,/credentials\.create|privateKey/);
-console.log('passkey UI: explicit handoff, key privacy, cleanup, no false completion passed');
+const vm = require('node:vm');
+const body = app.slice(app.indexOf('  function preparePasskeyWindow()'), app.indexOf('  async function confirmLogoutSessions()'));
+async function checkFlow(result, error) {
+  const nodes = new Map();
+  const $ = id => {
+    if (!nodes.has(id)) nodes.set(id, { hidden: true, disabled: false, textContent: '', removeAttribute(name) { delete this[name]; } });
+    return nodes.get(id);
+  };
+  const state = { pendingPasskeyJobId: 'live', jobs: new Map([['live', { email: 'synthetic@example.com' }]]), settings: { 'twofa.job_timeout': 180 } };
+  let release;
+  let options;
+  const popup = { closed: false, location: { href: '' }, close() { this.closed = true; } };
+  const context = { state, $, window: { open: () => popup, location: { origin: 'http://127.0.0.1:5033' } }, URL, icon: () => '', render() {}, toast() {}, isPasskeyPreparing: j => !!j.passkey_preparing,
+    api: (_, opts) => { options = opts; return new Promise((resolve, reject) => { release = () => error ? reject(error) : resolve(result); }); } };
+  vm.createContext(context);
+  vm.runInContext(body, context);
+  const pending = context.confirmPasskey();
+  assert.equal($('passkey-confirm-action').disabled, true);
+  release();
+  await pending;
+  assert.ok(options.timeoutMs > 180000 && options.timeoutMs <= 210000, 'bounded request wait');
+  assert.equal(state.passkeyPreparing, false);
+  assert.equal($('passkey-cancel').disabled, false);
+  assert.equal($('passkey-confirm-action').disabled, false);
+  return { $, state, popup };
+}
+(async () => {
+  const launchPath = '/api/passkey/launch/' + 'a'.repeat(43);
+  let { $, popup } = await checkFlow({ launch_path: launchPath });
+  assert.equal(popup.location.href, 'http://127.0.0.1:5033' + launchPath);
+  assert.equal($('passkey-open').hidden, true);
+  assert.match($('passkey-note').textContent, /Đã tự mở tab OpenAI/);
+  ({ $ } = await checkFlow(null, Object.assign(new Error('aborted'), { name: 'AbortError' })));
+  assert.match($('passkey-note').textContent, /quá thời gian/);
+  assert.equal($('passkey-open').hidden, true);
+  ({ $ } = await checkFlow(null, new Error('Không thể đăng nhập lại')));
+  assert.match($('passkey-note').textContent, /Không thể đăng nhập lại/);
+  ({ $ } = await checkFlow({ launch_path: 'https://evil.test/' }));
+  assert.equal($('passkey-open').href, undefined);
+  assert.match($('passkey-note').textContent, /không hợp lệ/);
+  console.log('passkey UI: success, timeout, error recovery, safe handoff passed');
+})().catch(error => { console.error(error); process.exitCode = 1; });

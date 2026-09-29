@@ -1,5 +1,6 @@
 """Passkey handoff tests; no real credentials or WebAuthn enrollment."""
 import asyncio
+import threading
 from dataclasses import asdict, replace
 from types import SimpleNamespace
 from unittest import IsolatedAsyncioTestCase, TestCase
@@ -11,19 +12,22 @@ from jobs import TwoFAJob, TwoFAJobManager
 from service import TwoFAService, TwoFAFlowError
 from passkey_service import PasskeyHandoffs, prepare_passkey_url, validate_passkey_url
 
-URL = 'https://auth.openai.com/passkey-enroll?state=synthetic-state'
+URL = 'https://auth.openai.com/passkey-enroll?origin_app_name=ChatGPT&mfa_token=synthetic-state'
 
 
 class PasskeyUrlTests(TestCase):
     def test_exact_allowlist(self):
         self.assertEqual(validate_passkey_url(URL), URL)
-        for url in ('http://auth.openai.com/passkey-enroll?state=x',
-                    'https://auth.openai.com.evil.test/passkey-enroll?state=x',
-                    'https://evil@auth.openai.com/passkey-enroll?state=x',
-                    'https://auth.openai.com:444/passkey-enroll?state=x',
-                    'https://auth.openai.com/log-in?state=x',
+        for url in (URL.replace('https:', 'http:'),
+                    URL.replace('auth.openai.com', 'auth.openai.com.evil.test'),
+                    URL.replace('auth.openai.com', 'evil@auth.openai.com'),
+                    URL.replace('auth.openai.com', 'auth.openai.com:444'),
+                    URL.replace('/passkey-enroll', '/log-in'),
                     'https://auth.openai.com/passkey-enroll', URL+'\r\n',
-                    URL+'&redirect_uri=https://evil.test', URL+'#fragment'):
+                    URL+'&redirect_uri=https://evil.test', URL+'#fragment',
+                    URL+'&mfa_token=duplicate', URL.replace('ChatGPT','OtherApp'),
+                    URL.replace('synthetic-state', 'bad%0Astate'),
+                    'https://auth.openai.com/passkey-enroll?state=old-contract'):
             with self.subTest(url=url), self.assertRaises(ValueError):
                 validate_passkey_url(url)
 
@@ -46,7 +50,7 @@ class PasskeyHttpTests(IsolatedAsyncioTestCase):
         transport = AsyncMock()
         transport.cookies = Mock()
         transport.__aenter__.return_value = transport
-        transport.get.return_value = SimpleNamespace(status_code=302, headers={'Location':URL})
+        transport.post.return_value = SimpleNamespace(status_code=200, json=lambda: {'state_token':'synthetic-state'})
         with patch('curl_cffi.requests.AsyncSession', return_value=transport):
             result = await prepare_passkey_url(session_data={
                 'accessToken':'synthetic-token', '__cookies':[
@@ -55,16 +59,17 @@ class PasskeyHttpTests(IsolatedAsyncioTestCase):
                 ]})
         self.assertEqual(result, URL)
         transport.cookies.set.assert_called_once_with('__Secure-next-auth.session-token','synthetic-cookie',domain='.chatgpt.com',path='/')
-        transport.get.assert_awaited_once()
-        args, kwargs = transport.get.call_args
-        self.assertEqual(args[0], 'https://chatgpt.com/auth/enroll_mfa')
-        self.assertEqual(kwargs['params'], {'factor':'passkey'})
+        transport.get.assert_not_awaited()
+        transport.post.assert_awaited_once()
+        args, kwargs = transport.post.call_args
+        self.assertEqual(args[0], 'https://chatgpt.com/backend-api/accounts/mfa/user/request_mfa_token_in_house')
+        self.assertEqual(kwargs['headers']['Authorization'], 'Bearer synthetic-token')
         self.assertFalse(kwargs['allow_redirects'])
 
     async def test_unexpected_html_or_redirect_fails_closed(self):
-        for status, location in ((200,URL),(302,'https://evil.test/'),(302,'https://auth.openai.com/log-in'),(500,'')):
+        for status, payload in ((200,{}),(200,{'state_token':42}),(200,{'state_token':'bad\nstate'}),(302,{}),(401,{}),(403,{}),(500,{})):
             transport=AsyncMock(); transport.cookies=Mock(); transport.__aenter__.return_value=transport
-            transport.get.return_value=SimpleNamespace(status_code=status,headers={'Location':location},text='private')
+            transport.post.return_value=SimpleNamespace(status_code=status,json=lambda:payload,text='private')
             with patch('curl_cffi.requests.AsyncSession',return_value=transport):
                 with self.assertRaises(ValueError) as error:
                     await prepare_passkey_url(session_data={'accessToken':'test','__cookies':[{'name':'__Secure-next-auth.session-token','value':'x','domain':'chatgpt.com'}]})
@@ -91,6 +96,77 @@ class PasskeyServiceTests(IsolatedAsyncioTestCase):
         with self.assertRaises(TwoFAFlowError) as error:
             await service.prepare_passkey(email='demo@example.com',password='synthetic',secret='TEST',timeout=30)
         self.assertNotIn('secret-token',str(error.exception))
+
+    async def test_login_is_not_retried_and_error_identifies_stage(self):
+        login = AsyncMock(side_effect=RuntimeError('secret-token'))
+        service = TwoFAService(login_fn=login, retry_delay=0)
+        with self.assertRaisesRegex(TwoFAFlowError, 'đăng nhập') as error:
+            await service.prepare_passkey(email='demo@example.com',password='synthetic',secret='TEST',timeout=30)
+        login.assert_awaited_once()
+        self.assertNotIn('secret-token', str(error.exception))
+
+    async def test_whole_preparation_has_one_deadline(self):
+        async def slow_login(**_):
+            await asyncio.sleep(0.02)
+            return {'accessToken':'synthetic'}
+        async def slow_handoff(**_):
+            await asyncio.sleep(0.02)
+            return URL
+        with patch('passkey_service.prepare_passkey_url', side_effect=slow_handoff):
+            with self.assertRaisesRegex(TwoFAFlowError, 'quá thời gian'):
+                await TwoFAService(login_fn=slow_login).prepare_passkey(
+                    email='demo@example.com', password='synthetic', secret='TEST', timeout=0.03)
+
+    async def test_timeout_keeps_account_locked_until_login_thread_stops(self):
+        entered, release = threading.Event(), threading.Event()
+        def blocking_login():
+            entered.set()
+            release.wait(2)
+            return {'accessToken':'synthetic'}
+        async def login(**_):
+            return await asyncio.to_thread(blocking_login)
+        manager = TwoFAJobManager(_JobRepo(), _SettingsRepo(), service=TwoFAService(login_fn=login))
+        manager.settings['twofa.job_timeout'] = 0.01
+        job = TwoFAJob(id='live', email='demo@example.com', password='synthetic', secret='TEST',
+                      status='success', account_state='live', login_verified=True)
+        manager.jobs['live'] = job
+        with patch('passkey_service.prepare_passkey_url', new=AsyncMock()) as prepare:
+            task = asyncio.create_task(manager.prepare_passkey('live'))
+            try:
+                await asyncio.to_thread(entered.wait, 1)
+                await asyncio.sleep(0.03)
+                self.assertFalse(task.done())
+                self.assertTrue(job.passkey_preparing)
+                with self.assertRaises(ValueError): manager.recheck('live')
+            finally:
+                release.set()
+                with self.assertRaisesRegex(TwoFAFlowError, 'quá thời gian'): await task
+            self.assertFalse(job.passkey_preparing)
+            prepare.assert_not_awaited()
+
+    async def test_cancel_keeps_account_locked_until_login_thread_stops(self):
+        entered, release = threading.Event(), threading.Event()
+        def blocking_login():
+            entered.set()
+            release.wait(2)
+            return {'accessToken':'synthetic'}
+        async def login(**_):
+            return await asyncio.to_thread(blocking_login)
+        manager = TwoFAJobManager(_JobRepo(), _SettingsRepo(), service=TwoFAService(login_fn=login))
+        job = TwoFAJob(id='live', email='demo@example.com', password='synthetic', secret='TEST',
+                      status='success', account_state='live', login_verified=True)
+        manager.jobs['live'] = job
+        with patch('passkey_service.prepare_passkey_url', new=AsyncMock()) as prepare:
+            task = asyncio.create_task(manager.prepare_passkey('live'))
+            await asyncio.to_thread(entered.wait, 1)
+            task.cancel()
+            await asyncio.sleep(0.03)
+            self.assertFalse(task.done())
+            self.assertTrue(job.passkey_preparing)
+            release.set()
+            with self.assertRaises(asyncio.CancelledError): await task
+            self.assertFalse(job.passkey_preparing)
+            prepare.assert_not_awaited()
 
 
 class PasskeyManagerTests(IsolatedAsyncioTestCase):

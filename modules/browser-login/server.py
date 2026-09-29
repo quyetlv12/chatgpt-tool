@@ -112,6 +112,19 @@ def resolve_web_login_link(payload):
     return normalize_web_login_link(supplied_link)
 
 
+def resolve_web_login_reload(payload):
+    """Return an optional one-shot delay; missing settings never enable reload."""
+    enabled = payload.get("reloadEnabled", False)
+    if not isinstance(enabled, bool):
+        raise ValueError("reloadEnabled phải là true hoặc false")
+    if not enabled:
+        return None
+    seconds = payload.get("reloadSeconds", 10)
+    if type(seconds) is not int or not 1 <= seconds <= 3600:
+        raise ValueError("Thời gian reload phải là số nguyên từ 1 đến 3600 giây")
+    return seconds
+
+
 def get_json_candidates():
     return unique_paths([
         # 9router v0.5+ root-level db.json (PRIMARY — used by current 9router)
@@ -755,6 +768,7 @@ def new_web_login_status(total=0, workers=0, link_url="", run_id="", running=Tru
         "logs": [],
         "logSequence": 0,
         "runId": str(run_id or ""),
+        "target": "chatgpt",
         "startedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z") if running else "",
         "finishedAt": "",
     }
@@ -782,6 +796,7 @@ def _safe_web_login_result(result):
         "linkOpened": bool(result.get("linkOpened")),
         "chatgptReloaded": bool(result.get("chatgptReloaded")),
         "personalAccountVerified": bool(result.get("personalAccountVerified")),
+        "codexOpened": bool(result.get("codexOpened")),
         "error": str(result.get("error") or "")[:500],
         "startedAt": str(result.get("startedAt") or "")[:60],
         "finishedAt": str(result.get("finishedAt") or "")[:60],
@@ -804,6 +819,7 @@ def safe_web_login_status(status):
     """Allow-list the durable run state; credentials and secondary URLs are excluded."""
     safe = new_web_login_status(running=False)
     safe.update({
+        "target": "codex" if status.get("target") == "codex" else "chatgpt",
         "running": bool(status.get("running")),
         "paused": bool(status.get("paused")),
         "interrupted": bool(status.get("interrupted")),
@@ -946,9 +962,12 @@ def get_web_login_status():
         return json.loads(json.dumps(_web_login_status, ensure_ascii=False))
 
 
-def get_web_login_status_response():
+def get_web_login_status_response(target="chatgpt"):
     """Return live state plus non-persistent capabilities of this server build."""
     status = get_web_login_status()
+    if status.get("target", "chatgpt") != target:
+        busy = status.get("running") or status.get("webReady") or status.get("paused")
+        status = {**new_web_login_status(running=False), "blockedBy": status.get("target") if busy else None}
     status["browserControls"] = True
     return status
 
@@ -967,12 +986,16 @@ def build_auto_login_command(accounts_file, workers):
     ]
 
 
-def build_web_login_command(accounts_file, workers, link_url=""):
+def build_web_login_command(accounts_file, workers, link_url="", reload_after=None, codex_web=False):
     """Build direct web-login arguments, omitting the secondary-tab flag when disabled."""
     args = build_auto_login_command(accounts_file, workers)
     args.extend(["--headed", "--web-only"])
+    if codex_web:
+        return args + ["--codex-web"]
     if link_url:
         args.extend(["--open-link", link_url])
+    if reload_after is not None:
+        args.extend(["--reload-after", str(reload_after)])
     return args
 
 
@@ -1169,7 +1192,7 @@ def start_auto_login(accounts, headed=True, workers=3):
     thread.start()
 
 
-def _web_login_worker(accounts, workers=3, link_url="", run_id=None):
+def _web_login_worker(accounts, workers=3, link_url="", run_id=None, reload_after=None, codex_web=False):
     """Run direct ChatGPT web login independently from Codex OAuth/import."""
     global _web_login_status, _web_login_proc
     import subprocess
@@ -1181,6 +1204,7 @@ def _web_login_worker(accounts, workers=3, link_url="", run_id=None):
         else:
             run_id = str(run_id or uuid.uuid4())
             status = new_web_login_status(len(accounts), workers, link_url, run_id=run_id)
+            status["target"] = "codex" if codex_web else "chatgpt"
             _web_login_status = status
     tmp_file = os.path.join(RUNTIME_DIR, "_tmp_web_accounts_{}.txt".format(run_id))
     with open(tmp_file, "w", encoding="utf-8") as output:
@@ -1199,30 +1223,26 @@ def _web_login_worker(accounts, workers=3, link_url="", run_id=None):
         "Bắt đầu phiên với {} tài khoản, tối đa {} luồng".format(len(accounts), active_workers),
         status=status,
     )
-    args = build_web_login_command(tmp_file, workers, link_url)
+    args = build_web_login_command(tmp_file, workers, link_url, reload_after=reload_after, codex_web=codex_web)
     try:
         env = os.environ.copy()
         env["PYTHONIOENCODING"] = "utf-8"
         env["PYTHONUTF8"] = "1"
         env["PYTHONUNBUFFERED"] = "1"
-        proc = subprocess.Popen(
-            args,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            encoding="utf-8",
-            errors="replace",
-            cwd=SCRIPT_DIR,
-            env=env,
-            start_new_session=os.name != "nt",
-        )
         with _web_login_lock:
+            if status.get("stopped") or _web_login_status is not status:
+                return
+            proc = subprocess.Popen(
+                args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                encoding="utf-8", errors="replace", cwd=SCRIPT_DIR, env=env,
+                start_new_session=os.name != "nt",
+            )
             if _web_login_status is status:
                 _web_login_proc = proc
             status["pid"] = proc.pid
         if _web_login_status is status:
             persist_web_login_status(status, current_only=True)
-        print("  [web] Direct ChatGPT login | PID: {}".format(proc.pid))
+        print("  [web] {} login | PID: {}".format("Codex OAuth" if codex_web else "Direct ChatGPT", proc.pid))
         for raw_line in proc.stdout:
             line = raw_line.strip()
             if not line:
@@ -1239,7 +1259,7 @@ def _web_login_worker(accounts, workers=3, link_url="", run_id=None):
                 status["finishedAt"] = _utc_timestamp()
                 append_web_login_log(
                     "success",
-                    "Đã xử lý đủ danh sách; {} phiên ChatGPT đang được giữ mở".format(count),
+                    "Đã xử lý đủ danh sách; {} phiên {} đang được giữ mở".format(count, "Codex" if codex_web else "ChatGPT"),
                     status=status,
                 )
                 continue
@@ -1300,7 +1320,7 @@ def _web_login_worker(accounts, workers=3, link_url="", run_id=None):
                 phase_stage = metadata.get("stage", "")
                 if phase_stage == "personal_account_verified":
                     phase_level = "success"
-                elif phase_stage in ("manual_check", "link_error", "personal_account_unverified"):
+                elif phase_stage in ("manual_check", "link_error", "reload_error", "personal_account_unverified"):
                     phase_level = "warning"
                 else:
                     phase_level = "info"
@@ -1351,6 +1371,7 @@ def _web_login_worker(accounts, workers=3, link_url="", run_id=None):
                     "linkUrl": link_by_email.get(email, status.get("linkUrl", "")),
                     "chatgptReloaded": metadata.get("reloaded") == "yes" or reload_by_email.get(email, False),
                     "personalAccountVerified": metadata.get("personal") == "yes",
+                    "codexOpened": metadata.get("codex") == "yes",
                     "error": metadata.get("error", ""),
                     "startedAt": datetime.fromtimestamp(
                         started_by_task.get(task_key, time.time()), timezone.utc
@@ -1359,7 +1380,14 @@ def _web_login_worker(accounts, workers=3, link_url="", run_id=None):
                     "durationSeconds": duration_seconds,
                 }
                 status["results"].append(result)
-                record_web_login_history(result)
+                if not codex_web:
+                    record_web_login_history(result)
+                if codex_web:
+                    append_web_login_log("success" if result["codexOpened"] else "warning",
+                                         "Codex OAuth đã xác thực; tab được giữ mở" if result["codexOpened"] else
+                                         "Tab OAuth được giữ mở; bạn kiểm tra và hoàn tất xác thực" if terminal_status == "success" else "Chưa mở được phiên OAuth",
+                                         email=email, stage=terminal_status, status=status)
+                    continue
                 append_web_login_log(
                     (
                         "success"
@@ -1382,6 +1410,13 @@ def _web_login_worker(accounts, workers=3, link_url="", run_id=None):
         proc.wait()
         if proc.stdout:
             proc.stdout.close()
+        if proc.returncode not in (0, None) and not status.get("stopped"):
+            append_web_login_log(
+                "error",
+                "Worker đăng nhập thoát với mã {}".format(proc.returncode),
+                stage="worker_exit",
+                status=status,
+            )
     except Exception as error:
         status["results"].append({"email": "?", "status": "error", "error": str(error)})
         status["failed"] += 1
@@ -1410,6 +1445,11 @@ def finalize_web_login_status(status, proc=None):
         status["pid"] = None
         status["running"] = False
         status["paused"] = False
+        # A retained browser is the only reason a completed worker stays
+        # alive.  Once that worker exits (including after the user closes all
+        # Chrome windows), never leave the old session blocking a new run.
+        status["webReady"] = False
+        status["webSessions"] = 0
         status["workersRunning"] = 0
         status["activeAccounts"] = []
         status["processed"] = status["done"] + status["failed"]
@@ -1436,21 +1476,25 @@ def finalize_web_login_status(status, proc=None):
     return is_current
 
 
-def start_web_login(accounts, workers=3, link_url=""):
+def start_web_login(accounts, workers=3, link_url="", reload_after=None, codex_web=False):
     global _web_login_status
+    if not accounts or workers < 1 or (codex_web and workers > 10):
+        raise ValueError("Số luồng Codex phải từ 1 đến 10" if codex_web else "Số luồng phải lớn hơn 0")
     with _web_login_lock:
-        if _web_login_status.get("running") or _web_login_status.get("paused") or _web_login_status.get("webReady"):
+        if _web_login_status.get("running") or _web_login_status.get("paused") or _web_login_status.get("webReady") or _web_login_status.get("stopping"):
             return False
         run_id = str(uuid.uuid4())
         _web_login_status = new_web_login_status(len(accounts), workers, link_url, run_id=run_id)
+        _web_login_status["target"] = "codex" if codex_web else "chatgpt"
         status = _web_login_status
     persist_web_login_status(status, current_only=True)
-    thread = threading.Thread(target=_web_login_worker, args=(accounts, workers, link_url, run_id), daemon=True)
+    thread = threading.Thread(target=_web_login_worker, args=(accounts, workers, link_url, run_id),
+                              kwargs={"reload_after": reload_after, "codex_web": codex_web}, daemon=True)
     thread.start()
     return True
 
 
-def send_web_login_control(action, index=None):
+def send_web_login_control(action, index=None, expected_target=None):
     """Send one validated browser command to the active automation process."""
     if action not in ("focus", "rearrange"):
         raise ValueError("Unsupported browser control action")
@@ -1465,6 +1509,8 @@ def send_web_login_control(action, index=None):
         command["index"] = index
 
     with _web_login_lock:
+        if expected_target is not None and _web_login_status.get("target", "chatgpt") != expected_target:
+            return False
         proc = _web_login_proc
     if not proc or proc.poll() is not None or not proc.stdin:
         return False
@@ -1497,10 +1543,10 @@ def pause_web_login():
     import signal
     with _web_login_lock:
         status = _web_login_status
-        if not status.get("running") or status.get("paused") or status.get("completed"):
+        if status.get("target", "chatgpt") != "chatgpt" or not status.get("running") or status.get("paused") or status.get("completed"):
             return False
-    if not _signal_web_login_process(signal.SIGSTOP):
-        return False
+        if not _signal_web_login_process(signal.SIGSTOP):
+            return False
     with _web_login_lock:
         if _web_login_status is status:
             status["paused"] = True
@@ -1512,10 +1558,10 @@ def resume_web_login():
     import signal
     with _web_login_lock:
         status = _web_login_status
-        if not status.get("running") or not status.get("paused"):
+        if status.get("target", "chatgpt") != "chatgpt" or not status.get("running") or not status.get("paused"):
             return False
-    if not _signal_web_login_process(signal.SIGCONT):
-        return False
+        if not _signal_web_login_process(signal.SIGCONT):
+            return False
     with _web_login_lock:
         if _web_login_status is status:
             status["paused"] = False
@@ -1550,11 +1596,18 @@ def restore_web_login_status():
     return True
 
 
-def stop_web_login():
+def stop_web_login(expected_run_id=None, expected_target=None):
     """Stop only the direct ChatGPT web-login process and its Chrome children."""
     global _web_login_proc
     proc = None
     with _web_login_lock:
+        status = _web_login_status
+        if expected_target is not None and status.get("target", "chatgpt") != expected_target:
+            raise ValueError("Phiên thuộc màn hình khác; tải lại trạng thái")
+        if expected_run_id is not None and (status.get("target") != "codex" or status.get("runId") != expected_run_id):
+            raise ValueError("Phiên đã thay đổi; tải lại trạng thái")
+        status["stopped"] = True
+        status["stopping"] = True
         proc = _web_login_proc
         was_paused = bool(_web_login_status.get("paused"))
     killed = False
@@ -1582,7 +1635,7 @@ def stop_web_login():
             except Exception:
                 pass
     with _web_login_lock:
-        status = _web_login_status
+        status["stopping"] = False
         status["running"] = False
         status["paused"] = False
         status["stopped"] = True
@@ -1826,6 +1879,9 @@ class Handler(SimpleHTTPRequestHandler):
         if p == "/api/web-login/status":
             self._json(get_web_login_status_response())
             return
+        if p == "/api/codex-web/status":
+            self._json(get_web_login_status_response("codex"))
+            return
         if p == "/api/web-login/history":
             history = load_web_login_history()
             self._json({"history": history, "count": len(history)})
@@ -1836,6 +1892,30 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         p = urlparse(self.path).path
+        if p in ("/api/codex-web/stop", "/api/codex-web/focus"):
+            try:
+                data = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+                with _web_login_lock:
+                    if (_web_login_status.get("target") != "codex"
+                            or not data.get("runId") or data["runId"] != _web_login_status.get("runId")):
+                        self._json({"error": "Phiên đã thay đổi; tải lại trạng thái trước khi thao tác"}, 409)
+                        return
+                    if p.endswith("/stop"):
+                        # Do not hold the state lock while waiting for the worker to exit.
+                        pass
+                    else:
+                        ok = send_web_login_control("focus", index=data.get("index"), expected_target="codex")
+                        self._json({"ok": ok}, 200 if ok else 409)
+                        return
+                self._json({"ok": True, "killed": stop_web_login(expected_run_id=data["runId"])})
+            except (ValueError, TypeError, AttributeError):
+                self._json({"error": "Yêu cầu điều khiển không hợp lệ"}, 400)
+            return
+        if p.startswith("/api/web-login/") and p not in ("/api/web-login/start",):
+            with _web_login_lock:
+                if _web_login_status.get("target") == "codex":
+                    self._json({"error": "Phiên hiện tại thuộc Codex Web; thao tác tại màn hình Codex Web"}, 409)
+                    return
         if p == "/api/import":
             length = int(self.headers.get("Content-Length", 0))
             body = self.rfile.read(length)
@@ -1910,30 +1990,43 @@ class Handler(SimpleHTTPRequestHandler):
             killed = stop_auto_login()
             self._json({"ok": True, "killed": killed})
             return
-        if p == "/api/web-login/start":
+        if p in ("/api/web-login/start", "/api/codex-web/start"):
             length = int(self.headers.get("Content-Length", 0))
             body = self.rfile.read(length)
             try:
                 data = json.loads(body)
+                if not isinstance(data, dict):
+                    self._json({"error": "Invalid request"}, 400)
+                    return
+                codex_web = p == "/api/codex-web/start"
                 accounts = data.get("accounts", [])
                 if not accounts:
                     self._json({"error": "No accounts"}, 400)
                     return
+                if codex_web and (not isinstance(accounts, list) or not 1 <= len(accounts) <= 50
+                                  or any(not isinstance(line, str) or len(line) > 4096
+                                         or any(ord(c) < 32 for c in line)
+                                         or len(line.split("|")) not in (2, 3)
+                                         or "@" not in line.split("|")[0]
+                                         or not line.split("|")[1].strip() for line in accounts)):
+                    self._json({"error": "Nhập từ 1 đến 50 dòng email|password|2fa hợp lệ"}, 400)
+                    return
                 try:
-                    workers = int(data.get("workers", 3))
+                    workers = int(data.get("workers", 1 if codex_web else 3))
                 except (TypeError, ValueError):
                     self._json({"error": "Workers must be a positive integer"}, 400)
                     return
-                if workers < 1:
-                    self._json({"error": "Workers must be a positive integer"}, 400)
+                if type(data.get("workers", 1 if codex_web else 3)) is not int or workers < 1 or (codex_web and workers > 10):
+                    self._json({"error": "Số luồng Codex phải là số nguyên từ 1 đến 10" if codex_web else "Workers must be a positive integer"}, 400)
                     return
                 try:
-                    link_url = resolve_web_login_link(data)
+                    link_url = "" if codex_web else resolve_web_login_link(data)
+                    reload_after = None if codex_web else resolve_web_login_reload(data)
                 except ValueError as error:
                     self._json({"error": str(error)}, 400)
                     return
-                if not start_web_login(accounts, workers=workers, link_url=link_url):
-                    self._json({"error": "ChatGPT web login is already running"}, 409)
+                if not start_web_login(accounts, workers=workers, link_url=link_url, reload_after=reload_after, codex_web=codex_web):
+                    self._json({"error": "Đang có phiên ChatGPT Web hoặc Codex Web; không thay thế phiên đang mở"}, 409)
                     return
                 with _web_login_lock:
                     run_id = _web_login_status.get("runId", "")
@@ -1949,14 +2042,17 @@ class Handler(SimpleHTTPRequestHandler):
                 self._json({"error": str(error)}, 500)
             return
         if p == "/api/web-login/stop":
-            self._json({"ok": True, "killed": stop_web_login()})
+            try:
+                self._json({"ok": True, "killed": stop_web_login(expected_target="chatgpt")})
+            except ValueError as error:
+                self._json({"error": str(error)}, 409)
             return
         if p == "/api/web-login/focus":
             length = int(self.headers.get("Content-Length", 0))
             try:
                 data = json.loads(self.rfile.read(length) or b"{}")
                 index = int(data.get("index") or 0)
-                if not send_web_login_control("focus", index=index):
+                if not send_web_login_control("focus", index=index, expected_target="chatgpt"):
                     self._json({"error": "Browser session is not available"}, 409)
                     return
                 append_web_login_log(
@@ -1969,7 +2065,7 @@ class Handler(SimpleHTTPRequestHandler):
                 self._json({"error": str(error)}, 400)
             return
         if p == "/api/web-login/rearrange":
-            if not send_web_login_control("rearrange"):
+            if not send_web_login_control("rearrange", expected_target="chatgpt"):
                 self._json({"error": "Browser sessions are not available"}, 409)
                 return
             append_web_login_log(

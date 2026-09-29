@@ -113,7 +113,22 @@ class HubServerTests(unittest.TestCase):
             thread.join(timeout=2)
 
     def test_hub_proxies_module_hosts_to_unix_sockets(self):
+        received = []
+
         class ModuleHandler(BaseHTTPRequestHandler):
+            def do_PUT(self):
+                body = self.rfile.read(int(self.headers.get("Content-Length", "0")))
+                received.append((self.command, self.path, self.headers.get("Host"),
+                                 self.headers.get("Content-Type"), body))
+                authorized = self.headers.get("X-Auth-Token") == "synthetic-local-token"
+                response = b'{"saved":true}' if authorized else b'{"detail":"Unauthorized"}'
+                self.send_response(200 if authorized else 401)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Content-Length", str(len(response)))
+                self.end_headers()
+                self.wfile.write(response)
+
             def do_GET(self):
                 body = b'{"ok": true}'
                 self.send_response(200)
@@ -138,6 +153,32 @@ class HubServerTests(unittest.TestCase):
                 request = suite.Request(f"http://127.0.0.1:{server.server_address[1]}/api/health", headers={"Host": "demo.localhost"})
                 with urlopen(request, timeout=2) as response:
                     self.assertEqual(json.load(response), {"ok": True})
+                path = "/api/settings?test=draft"
+                for draft in ("synthetic draft", ""):
+                    body = json.dumps({"input_draft": draft}).encode()
+                    connection = suite.http.client.HTTPConnection("127.0.0.1", server.server_address[1], timeout=2)
+                    try:
+                        connection.request("PUT", path, body=body, headers={
+                            "Host": "demo.localhost", "Content-Type": "application/json",
+                            "X-Auth-Token": "synthetic-local-token",
+                        })
+                        response = connection.getresponse()
+                        self.assertEqual(response.status, 200)
+                        self.assertEqual(response.getheader("Cache-Control"), "no-store")
+                        self.assertEqual(json.load(response), {"saved": True})
+                        self.assertEqual(received[-1], ("PUT", path, "demo.localhost", "application/json", body))
+                    finally:
+                        connection.close()
+                for host, expected in (("demo.localhost", 401), ("127.0.0.1", 404)):
+                    connection = suite.http.client.HTTPConnection("127.0.0.1", server.server_address[1], timeout=2)
+                    try:
+                        connection.request("PUT", "/api/shutdown", headers={"Host": host})
+                        response = connection.getresponse()
+                        self.assertEqual(response.status, expected)
+                        response.read()
+                        self.assertTrue(thread.is_alive())
+                    finally:
+                        connection.close()
             finally:
                 server.shutdown(); server.server_close(); thread.join(timeout=2)
                 backend.shutdown(); backend.server_close(); backend_thread.join(timeout=2)
