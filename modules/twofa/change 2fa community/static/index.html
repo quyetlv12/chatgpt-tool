@@ -25,6 +25,7 @@
         </div>
         <div class="top-actions">
           <button id="open-password-tool" class="history-trigger password-trigger" type="button" title="Mở luồng đổi mật khẩu riêng"><svg class="ui-icon" aria-hidden="true"><use href="/assets/tabler-icons.svg?v=1.0.1#ti-key"></use></svg><span>Đổi mật khẩu</span></button>
+          <button id="open-passkey-tool" class="history-trigger passkey-trigger" type="button" title="Mở luồng thêm passkey hàng loạt"><svg class="ui-icon" aria-hidden="true"><use href="/assets/tabler-icons.svg?v=1.0.3#ti-fingerprint"></use></svg><span>Thêm passkey</span></button>
           <button id="open-twofa-history" class="history-trigger" type="button" title="Lịch sử đổi 2FA"><svg class="ui-icon" aria-hidden="true"><use href="/assets/tabler-icons.svg?v=1.0.1#ti-history"></use></svg><span>Lịch sử</span></button>
           <button id="open-settings" class="top-settings" type="button" aria-label="Cài đặt" title="Cài đặt"><svg class="ui-icon" aria-hidden="true"><use href="/assets/tabler-icons.svg?v=1.0.1#ti-settings"></use></svg></button>
         </div>
@@ -215,6 +216,55 @@
     </section>
   </dialog>
 
+  <dialog id="passkey-workspace" class="password-workspace passkey-workspace" aria-labelledby="passkey-workspace-title">
+    <header class="password-workspace-head passkey-workspace-head">
+      <div>
+        <span class="eyebrow">PURE HTTP · HANDOFF RIÊNG</span>
+        <h2 id="passkey-workspace-title">Thêm passkey hàng loạt</h2>
+        <p>Tool đăng nhập lại từng tài khoản rồi tự mở tab OpenAI. Hoàn tất Touch ID/Face ID, PIN hoặc security key trên từng tab; tool không xác nhận enrollment.</p>
+      </div>
+      <div class="password-workspace-actions">
+        <span class="password-configured-badge configured">RAM-ONLY · KHÔNG LƯU JOB</span>
+        <button id="close-passkey-tool" class="history-close" type="button" aria-label="Đóng"><svg class="ui-icon" aria-hidden="true"><use href="/assets/tabler-icons.svg?v=1.0.1#ti-x"></use></svg></button>
+      </div>
+    </header>
+    <section class="password-workbench passkey-workbench">
+      <article class="password-pane">
+        <div class="section-head"><div><span class="eyebrow">ĐẦU VÀO RIÊNG</span><h3>Tài khoản cần thêm passkey</h3></div><span id="passkey-line-count" class="counter">0 bản ghi</span></div>
+        <label class="input-label" for="passkey-combo-input">Định dạng <code>email|password_hiện_tại|2FA_hiện_tại</code></label>
+        <textarea id="passkey-combo-input" wrap="off" spellcheck="false" autocomplete="off" placeholder="email@example.com|password hiện tại|TOTP secret"></textarea>
+        <div class="password-pane-actions">
+          <button id="launch-passkey-jobs" class="button primary" type="button"><svg class="ui-icon" aria-hidden="true"><use href="/assets/tabler-icons.svg?v=1.0.1#ti-player-play"></use></svg><span>Bắt đầu thêm passkey</span></button>
+        </div>
+      </article>
+      <article class="password-pane">
+        <div class="section-head"><div><span class="eyebrow">HANDOFF ĐÃ CẤP</span><h3>Danh sách handoff đã tạo</h3></div><span id="passkey-output-count" class="counter success-counter">0 handoff đã cấp</span></div>
+        <p class="output-note">Handoff đã được cấp cho tab tự động hoặc link dự phòng; chưa xác nhận passkey đã được thêm vào tài khoản.</p>
+        <textarea id="passkey-success-output" readonly spellcheck="false" aria-label="Danh sách handoff passkey đã mở"></textarea>
+        <div class="password-pane-actions">
+          <button id="copy-passkey-output" class="button ghost" type="button" disabled><svg class="ui-icon" aria-hidden="true"><use href="/assets/tabler-icons.svg?v=1.0.1#ti-copy"></use></svg><span>Copy</span></button>
+          <button id="export-passkey-output" class="button primary" type="button" disabled><svg class="ui-icon" aria-hidden="true"><use href="/assets/tabler-icons.svg?v=1.0.1#ti-download"></use></svg><span>Xuất .txt</span></button>
+        </div>
+      </article>
+    </section>
+    <section class="password-queue passkey-queue">
+      <div class="section-head">
+        <div><span class="eyebrow">PASSKEY QUEUE</span><h3>Tiến trình độc lập · nhiều luồng</h3></div>
+        <button id="clear-passkey-jobs" class="button ghost" type="button"><svg class="ui-icon" aria-hidden="true"><use href="/assets/tabler-icons.svg?v=1.0.1#ti-trash"></use></svg><span>Dọn danh sách</span></button>
+      </div>
+      <div class="password-table-wrap">
+        <table><thead><tr><th>Tài khoản</th><th>Trạng thái</th><th>Handoff</th><th></th></tr></thead><tbody id="passkey-job-list"></tbody></table>
+        <div id="passkey-empty-state" class="history-state">Chưa có passkey job.</div>
+      </div>
+    </section>
+  </dialog>
+
+  <dialog id="passkey-logs" class="launch-modal password-log-modal" aria-labelledby="passkey-log-title">
+    <div class="confirm-accent is-passkey"><span><svg class="ui-icon" aria-hidden="true"><use href="/assets/tabler-icons.svg?v=1.0.3#ti-fingerprint"></use></svg></span><div><small>PASSKEY JOB LOG</small><h2 id="passkey-log-title">Chi tiết</h2></div></div>
+    <pre id="passkey-log-content">Đang tải…</pre>
+    <div class="confirm-actions"><button id="close-passkey-logs" class="button ghost" type="button">Đóng</button></div>
+  </dialog>
+
   <dialog id="password-history" class="twofa-history-modal password-history-modal" aria-labelledby="password-history-title">
     <header class="history-head password-history-head">
       <div class="password-history-title-cluster">
@@ -388,5 +438,6 @@
   <script src="/assets/app.js?v=1.3.35" defer></script>
   <script src="/assets/password-history-ui.js?v=1.0.0" defer></script>
   <script src="/assets/password-ui.js?v=1.2.2" defer></script>
+  <script src="/assets/passkey-ui.js?v=1.0.0" defer></script>
 </body>
 </html>

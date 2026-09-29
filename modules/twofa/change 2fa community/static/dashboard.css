@@ -456,6 +456,8 @@ td.account span,.account-result small{font-size:.58rem;line-height:1.45}
 /* Password change is intentionally a separate workspace and event stream. */
 .password-trigger{border-color:rgba(247,192,74,.34);color:#ffe3a1;background:rgba(106,70,17,.28)}
 .password-trigger:hover{border-color:rgba(247,192,74,.62);background:rgba(128,84,18,.42)}
+.passkey-trigger{border-color:rgba(85,237,189,.34);color:#baffea;background:rgba(31,126,98,.22)}
+.passkey-trigger:hover{border-color:rgba(85,237,189,.68);background:rgba(31,145,105,.38)}
 .password-setting-card{margin-top:22px;padding-top:20px;border-top:1px solid var(--line)}
 .password-setting-card h3{margin:5px 0 6px;font-family:"Outfit","Inter",sans-serif;font-size:1rem}
 .password-setting-card p{margin:0 0 13px;color:var(--muted);font-size:.67rem;line-height:1.5}
@@ -502,6 +504,12 @@ td.account span,.account-result small{font-size:.58rem;line-height:1.45}
 .password-table-wrap td:nth-child(3) small{display:block;margin-top:5px;color:#789eb0;font-size:.56rem}
 .password-row-error{display:block;max-width:260px;margin-top:5px;color:#f5a6a6;font-size:.56rem;line-height:1.35}
 .password-log-modal pre{max-height:48vh;overflow:auto;padding:13px;border:1px solid var(--line);border-radius:10px;background:#071f32;color:#b8d9e7;font:600 .65rem/1.55 "SFMono-Regular",Consolas,monospace;white-space:pre-wrap}
+.passkey-workspace-head{background:radial-gradient(circle at 70% 0,rgba(85,237,189,.14),transparent 42%),rgba(10,39,60,.78)}
+.passkey-workspace .password-pane textarea:focus{border-color:var(--success);box-shadow:0 0 0 3px rgba(85,237,189,.1)}
+.passkey-open-link{height:30px;display:inline-flex;align-items:center;gap:6px;padding:0 9px;border:1px solid rgba(85,237,189,.38);border-radius:8px;background:rgba(37,145,112,.16);color:#aaffdf;font-size:.58rem;font-weight:800;text-decoration:none;white-space:nowrap}
+.passkey-open-link:hover{border-color:var(--success);color:#fff}
+.passkey-opened{color:#82edc5;font-size:.58rem;font-weight:800;white-space:nowrap}
+.passkey-phase{border-color:rgba(85,237,189,.32);background:rgba(37,145,112,.14);color:#9cf5d8}
 
 @media(max-width:900px){
   .password-workspace{width:98vw;height:97vh;border-radius:14px}

@@ -39,6 +39,11 @@ operator completes WebAuthn with Touch ID, Face ID, a device PIN, or a security
 key; this tool never generates or stores a private key and never claims that
 enrollment succeeded. See [OpenAI's passkey guidance](https://help.openai.com/en/articles/20001039-passkeys-to-secure-your-openai-account).
 
+A separate Passkey workspace prepares the same official handoff for a batch of
+`email|password|2FA` records with a bounded concurrent queue. Each ready record
+opens one tab through a one-use localhost redirect; the bulk queue is RAM-only,
+is not recovered after restart, and never reports WebAuthn enrollment as complete.
+
 The application has two very different browser meanings:
 
 - Local browser: server.py normally opens http://127.0.0.1:5033 so the operator can use the dashboard.
@@ -52,12 +57,14 @@ The Community executable starts at change 2fa community/server.py. Its active ca
 
 ~~~mermaid
 flowchart TD
-  operator["Operator"] --> localUI["Local dashboard<br/>app.js + password-ui.js"]
+  operator["Operator"] --> localUI["Local dashboard<br/>app.js + password-ui.js + passkey-ui.js"]
   localUI -->|"HTTP + local token"| api["FastAPI<br/>server.py"]
   api --> manager["TwoFAJobManager<br/>jobs.py"]
   api --> passwordManager["PasswordJobManager<br/>password_jobs.py"]
+  api --> passkeyManager["PasskeyJobManager<br/>passkey_jobs.py"]
   manager --> service["TwoFAService<br/>service.py"]
   passwordManager --> passwordService["PasswordService<br/>password_service.py"]
+  passkeyManager --> service
   service --> login["Pure-request login<br/>session_phase.py"]
   login --> oauth["OAuth + password + TOTP<br/>request_phase.py"]
   oauth --> sentinel["Sentinel support<br/>QuickJS or Python PoW"]
@@ -66,6 +73,7 @@ flowchart TD
   passwordService --> passwordHttp["HTTP re-auth + reset<br/>password_phase.py"]
   manager --> db[("SQLite")]
   passwordManager --> db
+  passkeyManager --> ram[("RAM only")]
   manager --> sse["SSE snapshots and events"]
   sse --> localUI
 ~~~
@@ -78,13 +86,14 @@ Active Community modules:
 | Job lifecycle | change 2fa community/jobs.py | Parsing, queue, workers, state, retries, recovery, logs, output, subscriptions |
 | Account orchestration | change 2fa community/service.py | Check, rotate, verify, plan/Usage/payment-method lookup, confirmed chat deletion, safe error classification |
 | Password lifecycle | change 2fa community/password_jobs.py, password_service.py | Independent queue, mutation checkpoint, ambiguity recovery, verified output/history |
+| Passkey lifecycle | change 2fa community/passkey_jobs.py, passkey_service.py | Independent RAM-only concurrent handoff queue; no persistence or WebAuthn result |
 | Password HTTP adapter | password_phase.py | Current-password/TOTP re-auth and one password-reset mutation without a browser |
 | Pure HTTP login | session_phase.py | get_session_pure_request(), auth callback, session export, entitlement, Usage, and saved payment-method helpers |
 | OAuth and browser-like protocol | request_phase.py, user_agent_profile.py | CSRF/OAuth steps, headers, cookies, device identity, HTTP persona |
 | Sentinel | sentinel_quickjs.py, sentinel_pow.py, openai_sentinel_quickjs.js | Challenge token generation; embedded Node/QuickJS first, Python PoW fallback |
 | MFA | mfa_phase.py, totp_helper.py | Factor discovery, disable, enroll, activate, TOTP generation |
 | Persistence | db/engine.py, db/schema.py, db/repositories.py | SQLite migration, settings, jobs, logs, verified history |
-| Dashboard | static/index.html, app.js, password-ui.js, password-history-ui.js, usage-ui.js, payment-ui.js, realtime-ui.js, dashboard.css | Separate 2FA/password workspaces, searchable verified history, safe rendering, downloads, dialogs |
+| Dashboard | static/index.html, app.js, password-ui.js, passkey-ui.js, password-history-ui.js, usage-ui.js, payment-ui.js, realtime-ui.js, dashboard.css | Separate 2FA/password/passkey workspaces, safe rendering, downloads, dialogs |
 | macOS integration | macos_integration.py, packaging/macos/MenuBarApp.swift | Optional frozen-build menu companion |
 
 Shared files contain substantial dormant code for signup, Outlook, iCloud Hide My Email, browser sessions, payment links, and other product variants. Schema tables and repository classes for those features are not proof that the Community app runs those flows.
@@ -170,14 +179,14 @@ server.py performs these steps before Uvicorn starts:
 2. Resolve JobRepository and SettingsRepository.
 3. Read web.auth_token.
 4. Generate a token with secrets.token_urlsafe(32) when missing or too short, then persist it.
-5. Construct TwoFAJobManager and the independent PasswordJobManager.
+5. Construct TwoFAJobManager, the independent PasswordJobManager, and the RAM-only PasskeyJobManager.
 6. Recover each manager's own job_type; the 2FA manager also backfills verified pre-v14 rotations into history.
 7. Build the FastAPI app and static mount.
 
 FastAPI lifespan:
 
-- startup starts both managers;
-- shutdown awaits both managers and then calls engine.close().
+- startup starts all three managers;
+- shutdown awaits the RAM-only passkey manager and both durable managers, then calls engine.close().
 
 main() optionally starts the macOS menu helper, starts a daemon health-poll thread that opens the local browser, then runs Uvicorn with a three-second graceful-shutdown bound.
 
@@ -302,6 +311,7 @@ Public or bootstrap routes:
 | GET /api/health | browser-open poll, health checks | ok, runtime port, 2FA and password worker health |
 | GET /api/events?token=... | EventSource | Token checked in query; SSE initial snapshot, events, keepalive |
 | GET /api/password/events?token=... | password-ui.js | Independent password-job SSE stream |
+| GET /api/passkey/events?token=... | passkey-ui.js | RAM-only passkey-job SSE stream |
 
 Routes protected by X-Auth-Token:
 
@@ -318,6 +328,15 @@ Routes protected by X-Auth-Token:
 | POST /api/jobs/{id}/delete-chats | delete_all_chats(id) | Reauthenticated bulk chat deletion; requires body confirmation `DELETE_ALL_CHATS` |
 | POST /api/jobs/{id}/logout-sessions | logout_all_sessions(id) | Reauthenticated one-shot session revocation; requires body confirmation `LOGOUT_ALL_SESSIONS` |
 | POST /api/jobs/{id}/passkey/start | prepare_passkey(id) | Reauthenticated official passkey handoff; requires body confirmation `ADD_PASSKEY` |
+| GET /api/passkey/bootstrap | PasskeyJobManager | Safe RAM-only bulk snapshots and worker health |
+| POST /api/passkey/jobs | PasskeyJobManager.add | Queue `email|password|2FA` records for concurrent handoff preparation |
+| POST /api/passkey/jobs/{id}/launch | PasskeyJobManager.issue_handoff | Issue one-use redirect; requires body confirmation `LAUNCH_PASSKEY` |
+| POST /api/passkey/jobs/{id}/retry | retry(id) | Retry a definitive bulk preparation error |
+| POST /api/passkey/jobs/{id}/stop | stop(id) | Stop one RAM-only bulk job |
+| DELETE /api/passkey/jobs/{id} | delete(id) | Delete one terminal RAM-only job |
+| DELETE /api/passkey/jobs | clear_async() | Clear only terminal bulk passkey jobs |
+| GET /api/passkey/jobs/{id}/logs | logs(id) | RAM-only fixed milestone log lines |
+| GET /api/passkey/output | output() | Non-sensitive list of handoffs opened; no credentials or enrollment claim |
 | GET /api/passkey/launch/{launch_token} | PasskeyHandoffs.consume | One-use, expiring redirect to exact `https://auth.openai.com/passkey-enroll` |
 | POST /api/jobs/{id}/stop | stop(id) | Cancelled or current snapshot |
 | DELETE /api/jobs/failed | clear_failed() | Delete count and replacement snapshot |
@@ -738,6 +757,14 @@ Passkey UI and manager:
 8. The dashboard waits at most the preparation budget plus 30 seconds, retains errors in the dialog, and releases its controls on failure. A client timeout does not cancel server work; server-side same-account guards remain authoritative.
 9. Pure-request login runs in a thread, which asyncio cancellation cannot stop. On deadline/cancellation, preparation waits for that single login to settle before releasing the account lock and never requests an enrollment token afterward. Cleanup can exceed the preparation budget; the UI deadline still releases the dialog controls without declaring the account idle.
 
+Bulk passkey workspace:
+
+1. Accepts `email|password|2FA` lines in a separate workspace and uses the configured 2FA concurrency and timeout values for its RAM-only workers.
+2. Opens blank tabs during the launch click, then navigates each tab only after that account's official handoff is ready. Popup-blocked tabs receive a one-use manual fallback link.
+3. Exposes only email, status, phase, and fixed milestone logs. Passwords, TOTP secrets, access tokens, cookies, enrollment URLs, and private keys never enter snapshots, SSE, output, or persistence.
+4. A bulk handoff can be issued once. The job remains terminal and must be cleared before the same account is submitted again; a restart loses all bulk jobs and pending handoffs.
+5. The UI clears the input on close and never claims that opening a tab means WebAuthn enrollment succeeded.
+
 Protocol evidence (2026-09-27): the current official `BrowserMfaEnrollPage` in
 `https://chatgpt.com/cdn/assets/async/141188.6e7ea20b77.js` requests the MFA token
 and constructs the enrollment URL as above. `/auth/enroll_mfa?factor=passkey`
@@ -992,6 +1019,7 @@ Do not revive signup, browser automation, Outlook, iCloud, payment, or session-e
 23. Logout-all-sessions always requires a successful Live row plus explicit confirmation, stays RAM-only, is never retried or replayed after restart, and never logs in again after revocation.
 24. Logout-all-sessions blocks same-account conflicting work but never changes another account's queue or state.
 25. Passkey preparation requires a verified Live row, is RAM-only and one-use, never stores a private key, and never claims WebAuthn completion.
+26. Bulk passkey jobs are RAM-only, use one handoff per account, never persist credentials or enrollment URLs, and never claim WebAuthn completion.
 
 ## 26. Agent change-impact map
 
@@ -1004,6 +1032,7 @@ Do not revive signup, browser automation, Outlook, iCloud, payment, or session-e
 | Delete all chats | session_phase.py, service.py, jobs.py, server.py, app.js | test_delete_all_chats.py, test_delete_chats_ui.js |
 | Logout all sessions | session_phase.py, service.py, jobs.py, server.py, app.js | test_logout_all_sessions.py, test_logout_sessions_ui.js |
 | Add passkey | passkey_service.py, service.py, jobs.py, server.py, app.js | test_passkey_feature.py, test_passkey_ui.js |
+| Bulk add passkey | passkey_jobs.py, passkey_service.py, server.py, passkey-ui.js | test_passkey_jobs.py, test_passkey_batch_ui.js |
 | Login, OAuth, password, TOTP challenge | service.py, session_phase.py, request_phase.py, Sentinel modules | service tests plus dependency check |
 | Disable, enroll, activate | mfa_phase.py, totp_helper.py, service.py, checkpoint path | rotation and history tests; inspect partial-state risk |
 | Plan, Usage, saved payment methods, or inspection switches | jobs.py, service.py, server.py, session_phase.py, app.js, usage-ui.js, payment-ui.js | test_inspection_options.py, test_usage_feature.py, test_usage_refresh.py, test_payment_methods_feature.py, test_inspection_options_ui.js, test_usage_ui.js, test_payment_ui.js |
