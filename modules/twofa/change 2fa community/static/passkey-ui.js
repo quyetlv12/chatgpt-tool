@@ -7,8 +7,8 @@
     events: null,
     output: '',
     clearPending: false,
+    closeWindowsPending: false,
     autoOpen: new Set(),
-    preopened: new Map(),
     launchPaths: new Map(),
     opened: new Set(),
     launching: new Set(),
@@ -45,7 +45,9 @@
   }
 
   function phaseLabel(job) {
-    return ({ queued: 'ĐANG CHỜ', authenticating: 'ĐANG ĐĂNG NHẬP', handoff_ready: 'CHỜ MỞ TAB', error: 'LỖI', cancelled: 'ĐÃ DỪNG' })[job.phase] || String(job.phase || '').toUpperCase();
+    if (state.opened.has(job.id)) return 'ĐÃ MỞ CỬA SỔ';
+    if (job.handoff_issued) return 'ĐÃ CẤP LIÊN KẾT';
+    return ({ queued: 'ĐANG CHỜ', authenticating: 'ĐANG ĐĂNG NHẬP', handoff_ready: 'CHỜ MỞ CỬA SỔ', error: 'LỖI', cancelled: 'ĐÃ DỪNG' })[job.phase] || String(job.phase || '').toUpperCase();
   }
 
   function renderInputCount() {
@@ -70,6 +72,8 @@
     const jobs = [...state.jobs.values()].sort((a, b) => a.created_at - b.created_at);
     $('clear-passkey-jobs').disabled = state.clearPending;
     $('clear-passkey-jobs').querySelector('span').textContent = state.clearPending ? 'Đang dọn…' : 'Dọn danh sách';
+    $('close-passkey-windows').disabled = state.closeWindowsPending;
+    $('close-passkey-windows').querySelector('span').textContent = state.closeWindowsPending ? 'Đang đóng…' : 'Đóng tất cả cửa sổ';
     $('passkey-empty-state').style.display = jobs.length ? 'none' : 'block';
     $('passkey-job-list').innerHTML = jobs.map((job) => {
       const canStop = ['queued', 'running'].includes(job.status);
@@ -77,18 +81,18 @@
       const canDelete = ['success', 'error', 'cancelled'].includes(job.status);
       const launchPath = state.launchPaths.get(job.id);
       const openAction = state.opened.has(job.id)
-        ? '<small class="passkey-opened">Đã mở tab</small>'
+        ? '<small class="passkey-opened">Đã mở cửa sổ</small>'
         : launchPath
-        ? `<a class="button passkey-open-link" target="_blank" rel="noopener noreferrer" href="${escapeHtml(launchPath)}">${icon('fingerprint')}<span>Mở lại tab</span></a>`
+        ? `<a class="button passkey-open-link" target="_blank" rel="noopener noreferrer" href="${escapeHtml(launchPath)}">${icon('fingerprint')}<span>Mở liên kết dự phòng</span></a>`
         : job.handoff_ready
-          ? `<button type="button" class="icon-button passkey-open-action" data-passkey-action="open" title="Mở tab OpenAI">${icon('fingerprint')}</button>`
+          ? `<button type="button" class="icon-button passkey-open-action" data-passkey-action="open" title="Mở cửa sổ Chrome">${icon('fingerprint')}</button>`
           : job.handoff_issued
-            ? '<small class="passkey-opened">Đã mở tab</small>'
+            ? '<small class="passkey-opened">Đã cấp liên kết</small>'
             : '';
       return `<tr data-id="${escapeHtml(job.id)}" title="${escapeHtml(job.error || '')}">
         <td class="account"><strong>${escapeHtml(job.email)}</strong><span>${escapeHtml(job.id.slice(0, 10).toUpperCase())}</span></td>
         <td><span class="status ${escapeHtml(job.status)}">${escapeHtml(statusLabel(job))}</span>${job.error ? `<small class="password-row-error">${escapeHtml(job.error)}</small>` : ''}</td>
-        <td><span class="password-phase ${escapeHtml(job.phase)}">${escapeHtml(phaseLabel(job))}</span><small>${job.handoff_issued ? 'Tab đã mở; chưa xác nhận enrollment' : job.handoff_ready ? 'Handoff dùng một lần đã sẵn sàng' : 'Đang chuẩn bị'}</small></td>
+        <td><span class="password-phase ${escapeHtml(job.phase)}">${escapeHtml(phaseLabel(job))}</span><small>${job.handoff_issued ? 'Hoàn tất thêm passkey trên tab OpenAI' : job.handoff_ready ? 'Handoff dùng một lần đã sẵn sàng' : 'Đang chuẩn bị'}</small></td>
         <td><div class="row-actions">${openAction}
           <button type="button" class="icon-button" data-passkey-action="logs" title="Xem log">${icon('list-details')}</button>
           ${canRetry ? `<button type="button" class="icon-button" data-passkey-action="retry" title="Chạy lại">${icon('refresh')}</button>` : ''}
@@ -99,80 +103,65 @@
     }).join('');
   }
 
-  function preopenTabs(count) {
-    const windows = [];
-    for (let index = 0; index < count; index += 1) {
-      try {
-        const popup = window.open('about:blank', '_blank');
-        if (popup && !popup.closed) {
-          try { popup.opener = null; } catch (_) { /* read-only in some browsers */ }
-          windows.push(popup);
-        } else {
-          windows.push(null);
-        }
-      } catch (_) {
-        windows.push(null);
-      }
-    }
-    return windows;
-  }
-
-  async function openHandoff(id, popup = null) {
-    if (state.launching.has(id)) return;
+  async function openHandoff(id) {
+    if (state.launching.has(id) || state.opened.has(id) || state.launchPaths.has(id)) return;
     const job = state.jobs.get(id);
     if (!job || job.status !== 'success') return;
     state.launching.add(id);
-    const target = popup || state.preopened.get(id) || null;
     try {
-      let launchPath = state.launchPaths.get(id);
-      if (!launchPath) {
-        const data = await api(`/api/passkey/jobs/${encodeURIComponent(id)}/launch`, {
-          method: 'POST', body: JSON.stringify({ confirm: 'LAUNCH_PASSKEY' }),
-        });
-        launchPath = data.launch_path;
-        state.launchPaths.set(id, launchPath);
+      const data = await api(`/api/passkey/jobs/${encodeURIComponent(id)}/launch`, {
+        method: 'POST', body: JSON.stringify({ confirm: 'LAUNCH_PASSKEY', native_window: true }),
+      });
+      if (!/^\/api\/passkey\/launch\/[A-Za-z0-9_-]{43}$/.test(data.launch_path)) {
+        throw new Error('Liên kết passkey không hợp lệ.');
       }
-      if (target && !target.closed) {
-        target.location.href = new URL(launchPath, window.location.origin).href;
-        state.preopened.delete(id);
+      if (data.opened === true) {
         state.opened.add(id);
+        toast(`Đã mở cửa sổ Chrome passkey cho ${job.email}.`);
+      } else {
+        state.launchPaths.set(id, data.launch_path);
+        toast('Không khởi chạy được Chrome riêng. Hãy kiểm tra Google Chrome hoặc dùng liên kết dự phòng trong vòng 2 phút.', 'error');
       }
       state.autoOpen.delete(id);
       await refreshOutput();
       renderJobs();
-      if (target && !target.closed) toast(`Đã mở tab passkey cho ${job.email}.`);
     } catch (error) {
-      if (target && !target.closed) {
-        try { target.close(); } catch (_) { /* best effort */ }
-      }
-      state.preopened.delete(id);
+      state.autoOpen.delete(id);
       toast(error.message, 'error');
     } finally {
       state.launching.delete(id);
       renderJobs();
+      syncEventVisibility();
+    }
+  }
+
+  function settleAutomaticHandoff(job) {
+    if (!job || !state.autoOpen.has(job.id)) return;
+    if (job.status === 'success' && job.handoff_ready) {
+      openHandoff(job.id);
+      return;
+    }
+    if (['error', 'cancelled'].includes(job.status)) {
+      state.autoOpen.delete(job.id);
     }
   }
 
   async function launchJobs() {
     const lines = $('passkey-combo-input').value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
     if (!lines.length) throw new Error('Hãy nhập ít nhất một tài khoản.');
-    const windows = preopenTabs(lines.length);
     const button = $('launch-passkey-jobs');
     button.disabled = true;
     try {
       const data = await api('/api/passkey/jobs', { method: 'POST', body: JSON.stringify({ lines }) });
-      data.jobs.forEach((job, index) => {
+      data.jobs.forEach((job) => {
         state.jobs.set(job.id, job);
         state.autoOpen.add(job.id);
-        const popup = windows[index];
-        if (popup) state.preopened.set(job.id, popup);
       });
-      windows.slice(data.jobs.length).forEach((popup) => { if (popup && !popup.closed) popup.close(); });
+      // A ready account opens Chrome even while the dashboard is hidden.
+      syncEventVisibility();
       renderJobs();
-      toast(`Đã nạp ${data.jobs.length} passkey job; tab sẽ tự mở khi từng tài khoản sẵn sàng.`);
-    } catch (error) {
-      windows.forEach((popup) => { if (popup && !popup.closed) popup.close(); });
-      throw error;
+      data.jobs.forEach(settleAutomaticHandoff);
+      toast(`Đã nạp ${data.jobs.length} passkey job; cửa sổ Chrome sẽ tự mở và chia màn hình khi từng tài khoản sẵn sàng.`);
     } finally {
       button.disabled = false;
     }
@@ -180,9 +169,7 @@
 
   async function jobAction(id, action) {
     if (action === 'open') {
-      let popup = state.preopened.get(id) || null;
-      if (!popup) popup = window.open('about:blank', '_blank');
-      await openHandoff(id, popup);
+      await openHandoff(id);
       return;
     }
     if (action === 'logs') {
@@ -194,33 +181,22 @@
       $('passkey-log-content').textContent = data.logs.join('\n') || 'Chưa có log.';
       return;
     }
-    let retryPopup = null;
-    if (action === 'retry') {
-      try {
-        retryPopup = window.open('about:blank', '_blank');
-        if (retryPopup && !retryPopup.closed) {
-          try { retryPopup.opener = null; } catch (_) { /* read-only in some browsers */ }
-          state.preopened.set(id, retryPopup);
-        }
-      } catch (_) { /* manual fallback remains available */ }
-    }
-    try {
-      if (action === 'delete') {
-        await api(`/api/passkey/jobs/${encodeURIComponent(id)}`, { method: 'DELETE' });
-        state.jobs.delete(id);
-        state.autoOpen.delete(id);
-        state.preopened.delete(id);
+    if (action === 'delete') {
+      await api(`/api/passkey/jobs/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      state.jobs.delete(id);
+      state.autoOpen.delete(id);
+      state.launchPaths.delete(id);
+      state.opened.delete(id);
+    } else {
+      const data = await api(`/api/passkey/jobs/${encodeURIComponent(id)}/${action}`, { method: 'POST' });
+      state.jobs.set(id, data.job);
+      if (action === 'retry') {
         state.launchPaths.delete(id);
         state.opened.delete(id);
-      } else {
-        const data = await api(`/api/passkey/jobs/${encodeURIComponent(id)}/${action}`, { method: 'POST' });
-        state.jobs.set(id, data.job);
-        if (action === 'retry') state.autoOpen.add(id);
+        state.autoOpen.add(id);
+        syncEventVisibility();
+        settleAutomaticHandoff(data.job);
       }
-    } catch (error) {
-      if (retryPopup && !retryPopup.closed) retryPopup.close();
-      state.preopened.delete(id);
-      throw error;
     }
     renderJobs();
   }
@@ -233,8 +209,6 @@
       const data = await api('/api/passkey/jobs', { method: 'DELETE' });
       state.jobs.clear();
       state.autoOpen.clear();
-      state.preopened.forEach((popup) => { if (popup && !popup.closed) { try { popup.close(); } catch (_) { /* best effort */ } } });
-      state.preopened.clear();
       state.launchPaths.clear();
       state.opened.clear();
       await refreshOutput();
@@ -242,6 +216,21 @@
       toast(`Đã dọn ${data.deleted} passkey job.`);
     } finally {
       state.clearPending = false;
+      renderJobs();
+    }
+  }
+
+  async function closePasskeyWindows() {
+    if (state.closeWindowsPending) return;
+    state.closeWindowsPending = true;
+    renderJobs();
+    try {
+      const data = await api('/api/passkey/windows/close', { method: 'POST' });
+      state.opened.clear();
+      renderJobs();
+      toast(data.closed ? `Đã đóng ${data.closed} cửa sổ passkey.` : 'Không có cửa sổ passkey nào đang chạy.');
+    } finally {
+      state.closeWindowsPending = false;
       renderJobs();
     }
   }
@@ -267,16 +256,12 @@
     if (payload.type === 'snapshot') {
       state.jobs.clear();
       payload.jobs.forEach((job) => state.jobs.set(job.id, job));
+      // A reconnect can receive a ready job only in the snapshot. Do not wait
+      // for another job event before opening its admin window.
+      payload.jobs.forEach(settleAutomaticHandoff);
     } else if (payload.type === 'job') {
       state.jobs.set(payload.job.id, payload.job);
-      if (state.autoOpen.has(payload.job.id) && payload.job.status === 'success' && payload.job.handoff_ready) {
-        openHandoff(payload.job.id, state.preopened.get(payload.job.id));
-      } else if (['error', 'cancelled'].includes(payload.job.status)) {
-        const popup = state.preopened.get(payload.job.id);
-        if (popup && !popup.closed) { try { popup.close(); } catch (_) { /* best effort */ } }
-        state.preopened.delete(payload.job.id);
-        state.autoOpen.delete(payload.job.id);
-      }
+      settleAutomaticHandoff(payload.job);
     } else if (payload.type === 'removed') {
       state.jobs.delete(payload.id);
     }
@@ -289,7 +274,10 @@
   }
 
   function shouldConnectEvents() {
-    return Boolean(state.token && document.visibilityState !== 'hidden' && $('passkey-workspace').open);
+    // Opening Chrome hides the dashboard. Keep SSE alive for pending handoffs.
+    const waitingForAutomaticTab = state.autoOpen.size > 0;
+    return Boolean(state.token && $('passkey-workspace')
+      && (document.visibilityState !== 'hidden' || waitingForAutomaticTab));
   }
 
   function connectEvents() {
@@ -310,31 +298,23 @@
     data.jobs.forEach((job) => state.jobs.set(job.id, job));
     renderJobs();
     await refreshOutput();
-    if (!$('passkey-workspace').open) $('passkey-workspace').showModal();
     syncEventVisibility();
-  }
-
-  function closeWorkspace() {
-    disconnectEvents();
-    state.preopened.forEach((popup) => { if (popup && !popup.closed) { try { popup.close(); } catch (_) { /* best effort */ } } });
-    state.preopened.clear();
-    $('passkey-combo-input').value = '';
-    renderInputCount();
   }
 
   async function init() {
     try {
       const bootstrap = await fetch('/api/bootstrap').then((response) => response.json());
       state.token = bootstrap.token;
-    } catch (_) { /* main app reports the connection state */ }
+      await openWorkspace();
+    } catch (error) {
+      toast(`Không mở được màn hình passkey: ${error.message}`, 'error');
+    }
   }
 
-  $('open-passkey-tool').addEventListener('click', () => openWorkspace().catch((error) => toast(error.message, 'error')));
-  $('close-passkey-tool').addEventListener('click', () => $('passkey-workspace').close());
-  $('passkey-workspace').addEventListener('close', closeWorkspace);
   $('passkey-combo-input').addEventListener('input', renderInputCount);
   $('launch-passkey-jobs').addEventListener('click', () => launchJobs().catch((error) => toast(error.message, 'error')));
   $('clear-passkey-jobs').addEventListener('click', () => clearJobs().catch((error) => toast(error.message, 'error')));
+  $('close-passkey-windows').addEventListener('click', () => closePasskeyWindows().catch((error) => toast(error.message, 'error')));
   $('copy-passkey-output').addEventListener('click', () => copyText(state.output).catch((error) => toast(error.message, 'error')));
   $('export-passkey-output').addEventListener('click', () => exportOutput().catch((error) => toast(error.message, 'error')));
   $('passkey-job-list').addEventListener('click', (event) => {

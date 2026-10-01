@@ -39,10 +39,14 @@ operator completes WebAuthn with Touch ID, Face ID, a device PIN, or a security
 key; this tool never generates or stores a private key and never claims that
 enrollment succeeded. See [OpenAI's passkey guidance](https://help.openai.com/en/articles/20001039-passkeys-to-secure-your-openai-account).
 
-A separate Passkey workspace prepares the same official handoff for a batch of
+A dedicated `/passkey` page prepares the same official handoff for a batch of
 `email|password|2FA` records with a bounded concurrent queue. Each ready record
-opens one tab through a one-use localhost redirect; the bulk queue is RAM-only,
-is not recovered after restart, and never reports WebAuthn enrollment as complete.
+opens a separate native Chrome window on macOS through a one-use localhost
+redirect. Its isolated temporary profile explicitly defaults compatible
+passkey creation to iCloud Keychain, so Chrome goes directly to the native
+Passwords/Touch ID prompt instead of asking the operator to choose a provider.
+The bulk queue is RAM-only, is not recovered after restart, and never reports
+WebAuthn enrollment as complete.
 
 The application has two very different browser meanings:
 
@@ -87,13 +91,14 @@ Active Community modules:
 | Account orchestration | change 2fa community/service.py | Check, rotate, verify, plan/Usage/payment-method lookup, confirmed chat deletion, safe error classification |
 | Password lifecycle | change 2fa community/password_jobs.py, password_service.py | Independent queue, mutation checkpoint, ambiguity recovery, verified output/history |
 | Passkey lifecycle | change 2fa community/passkey_jobs.py, passkey_service.py | Independent RAM-only concurrent handoff queue; no persistence or WebAuthn result |
+| Passkey windows | change 2fa community/passkey_windows.py | macOS Chrome window creation and tiling; isolated profile preference defaults compatible WebAuthn creation to iCloud Keychain; RAM-only native IDs, no remote page automation |
 | Password HTTP adapter | password_phase.py | Current-password/TOTP re-auth and one password-reset mutation without a browser |
 | Pure HTTP login | session_phase.py | get_session_pure_request(), auth callback, session export, entitlement, Usage, and saved payment-method helpers |
 | OAuth and browser-like protocol | request_phase.py, user_agent_profile.py | CSRF/OAuth steps, headers, cookies, device identity, HTTP persona |
 | Sentinel | sentinel_quickjs.py, sentinel_pow.py, openai_sentinel_quickjs.js | Challenge token generation; embedded Node/QuickJS first, Python PoW fallback |
 | MFA | mfa_phase.py, totp_helper.py | Factor discovery, disable, enroll, activate, TOTP generation |
 | Persistence | db/engine.py, db/schema.py, db/repositories.py | SQLite migration, settings, jobs, logs, verified history |
-| Dashboard | static/index.html, app.js, password-ui.js, passkey-ui.js, password-history-ui.js, usage-ui.js, payment-ui.js, realtime-ui.js, dashboard.css | Separate 2FA/password/passkey workspaces, safe rendering, downloads, dialogs |
+| Dashboard | static/index.html, static/passkey.html, app.js, password-ui.js, passkey-ui.js, password-history-ui.js, usage-ui.js, payment-ui.js, realtime-ui.js, dashboard.css | Main 2FA/password workspace plus a dedicated full-page passkey route, safe rendering, downloads, dialogs |
 | macOS integration | macos_integration.py, packaging/macos/MenuBarApp.swift | Optional frozen-build menu companion |
 
 Shared files contain substantial dormant code for signup, Outlook, iCloud Hide My Email, browser sessions, payment links, and other product variants. Schema tables and repository classes for those features are not proof that the Community app runs those flows.
@@ -306,6 +311,7 @@ Public or bootstrap routes:
 | Method and path | Consumer | Response or behavior |
 |---|---|---|
 | GET / | Browser | static/index.html |
+| GET /passkey | Browser | Dedicated full-width static/passkey.html page; not a modal |
 | GET /assets/* | Browser | Static CSS, JavaScript, icons |
 | GET /api/bootstrap | app.js | Brand, token, safe snapshots, settings, worker health |
 | GET /api/health | browser-open poll, health checks | ok, runtime port, 2FA and password worker health |
@@ -330,7 +336,8 @@ Routes protected by X-Auth-Token:
 | POST /api/jobs/{id}/passkey/start | prepare_passkey(id) | Reauthenticated official passkey handoff; requires body confirmation `ADD_PASSKEY` |
 | GET /api/passkey/bootstrap | PasskeyJobManager | Safe RAM-only bulk snapshots and worker health |
 | POST /api/passkey/jobs | PasskeyJobManager.add | Queue `email|password|2FA` records for concurrent handoff preparation |
-| POST /api/passkey/jobs/{id}/launch | PasskeyJobManager.issue_handoff | Issue one-use redirect; requires body confirmation `LAUNCH_PASSKEY` |
+| POST /api/passkey/jobs/{id}/launch | PasskeyJobManager.issue_handoff | Issue one-use redirect; requires body confirmation `LAUNCH_PASSKEY`; optional `native_window=true` opens/tile Chrome on macOS and returns `opened` plus fallback `launch_path` |
+| POST /api/passkey/windows/close | PasskeyWindows.close_all | Gracefully close only Chrome processes opened by this tool; force-kill a stubborn owned process after a bounded timeout |
 | POST /api/passkey/jobs/{id}/retry | retry(id) | Retry a definitive bulk preparation error |
 | POST /api/passkey/jobs/{id}/stop | stop(id) | Stop one RAM-only bulk job |
 | DELETE /api/passkey/jobs/{id} | delete(id) | Delete one terminal RAM-only job |
@@ -552,7 +559,7 @@ The HTTP client supplies TLS fingerprinting, User-Agent and Client Hints, fetch 
 
 Passwordless email-OTP accounts need a mail provider. The Community service passes no mail provider, so that branch cannot complete.
 
-_login() tries up to three times by default. Fatal credential errors stop early. Final failure is classified as account_die, invalid_credentials, or technical_error; only conservative account failures become non-retryable.
+_login() tries up to three times by default. Fatal credential errors stop early. Password/MFA verification HTTP 403, 429, redirects, and 5xx are treated as upstream/WAF/state failures rather than proof of bad credentials; the next attempt gets a fresh OAuth state through the legacy fallback flow. Final failure is classified as account_die, invalid_credentials, or technical_error; only conservative account failures become non-retryable.
 
 ## 14. Check-only flow
 
@@ -747,7 +754,7 @@ Logout-all-sessions UI and manager:
 Passkey UI and manager:
 
 1. Shows the action only for a successful Live row with `login_verified=true`.
-2. Requires explicit confirmation, then reauthenticates once and POSTs `/backend-api/accounts/mfa/user/request_mfa_token_in_house` with the fresh session bearer token and ChatGPT cookies. The complete preparation has one deadline, capped at 180 seconds; it does not retry login.
+2. Requires explicit confirmation, then reauthenticates with up to three bounded attempts and POSTs `/backend-api/accounts/mfa/user/request_mfa_token_in_house` with the fresh session bearer token, the preserved ChatGPT/OpenAI cookie set, and browser-equivalent request headers. The complete preparation has one deadline, capped at 180 seconds; a transient login failure is retried before the handoff request.
 3. Requires a valid `state_token` response and constructs only `https://auth.openai.com/passkey-enroll?origin_app_name=ChatGPT&mfa_token=...`; no arbitrary host, path, fragment, redirect, extra parameter, or control character is accepted.
 4. Stores the redirect in a bounded RAM-only one-use handoff for two minutes; the token is consumed before redirect and returns 410 on reuse/expiry.
 5. The browser performs WebAuthn. No private key, credential object, passkey name, token, cookie, or upstream body is persisted or emitted in snapshots/SSE/logs.
@@ -757,13 +764,13 @@ Passkey UI and manager:
 8. The dashboard waits at most the preparation budget plus 30 seconds, retains errors in the dialog, and releases its controls on failure. A client timeout does not cancel server work; server-side same-account guards remain authoritative.
 9. Pure-request login runs in a thread, which asyncio cancellation cannot stop. On deadline/cancellation, preparation waits for that single login to settle before releasing the account lock and never requests an enrollment token afterward. Cleanup can exceed the preparation budget; the UI deadline still releases the dialog controls without declaring the account idle.
 
-Bulk passkey workspace:
+Bulk passkey page:
 
-1. Accepts `email|password|2FA` lines in a separate workspace and uses the configured 2FA concurrency and timeout values for its RAM-only workers.
-2. Opens blank tabs during the launch click, then navigates each tab only after that account's official handoff is ready. Popup-blocked tabs receive a one-use manual fallback link.
+1. `/passkey` renders a dedicated full-width page rather than a modal. It accepts `email|password|2FA` lines and uses the configured 2FA concurrency and timeout values for its RAM-only workers. The input/output panes and queue receive independent, taller scroll areas so the operator can inspect more data at once.
+2. After each account's official handoff is ready, requests a native Chrome window (`native_window=true`). Every submitted record snapshots its 1-based window position and the deduplicated batch size. `PasskeyWindows` starts the Google Chrome executable directly with a unique temporary profile plus `--new-window`, `--window-position`, and `--window-size`; before launch it writes only Chromium's registered `webauthn.create_in_icloud_keychain=true` preference to that profile. On supported macOS/Chrome versions, a compatible creation request therefore goes directly to the native Passwords/iCloud Keychain prompt. This matches ChatGPT Web's independent-browser behavior and does not require macOS Automation/Apple Events permission. All accounts in one submitted batch therefore receive separate, pre-tiled Chrome processes. No existing Chrome or default-browser tab is reused, moved, or closed. The temporary profile is removed after the operator closes that Chrome process. If Chrome is missing, profile preparation fails, launch fails, or the platform is unsupported, the dashboard retains a one-use manual fallback link valid for two minutes. Suite mode uses `twofa.localhost:<configured hub port>`; standalone mode uses its configured loopback host/port. Neither arbitrary URLs nor commands can be submitted to the native launcher.
 3. Exposes only email, status, phase, and fixed milestone logs. Passwords, TOTP secrets, access tokens, cookies, enrollment URLs, and private keys never enter snapshots, SSE, output, or persistence.
-4. A bulk handoff can be issued once. The job remains terminal and must be cleared before the same account is submitted again; a restart loses all bulk jobs and pending handoffs.
-5. The UI clears the input on close and never claims that opening a tab means WebAuthn enrollment succeeded.
+4. Each bulk job can issue one handoff. Only queued/running jobs lock the account. A later explicit submission can create a fresh job for the same account with the newly entered credentials, keeping previous terminal jobs and issued links. Retry cannot overlap another active passkey job for the same email. A restart loses all bulk jobs and pending handoffs.
+5. The UI keeps the entered input while the page remains open and failed submissions preserve it. Opening a window never means WebAuthn enrollment succeeded. Clearing jobs, leaving the page, or engine shutdown does not close the operator's Chrome windows. The explicit `Đóng tất cả cửa sổ` action runs immediately without a confirmation dialog and closes only the Chrome processes tracked by `PasskeyWindows`; it never scans or closes the operator's normal Chrome windows or tabs. The passkey SSE stays connected while `/passkey` is visible or while automatic handoffs remain pending, even when Chrome hides the page.
 
 Protocol evidence (2026-09-27): the current official `BrowserMfaEnrollPage` in
 `https://chatgpt.com/cdn/assets/async/141188.6e7ea20b77.js` requests the MFA token
@@ -841,7 +848,10 @@ When a subscriber queue is full, the manager drops its oldest pending event befo
 The dashboard treats SSE connections as foreground resources. The main 2FA
 stream closes when its tab becomes hidden and reconnects with a fresh snapshot
 when the tab becomes visible. The password stream additionally exists only
-while the password workspace is open. Both streams close on `pagehide`. This
+while the password workspace is open. The passkey stream belongs to the
+dedicated `/passkey` page and remains alive while a submitted handoff still
+needs to open Chrome; otherwise it follows page visibility. All streams close
+on `pagehide`. This
 prevents several retained dashboard tabs from exhausting Chromium's per-origin
 HTTP/1.1 connection pool and blocking a later page reload.
 

@@ -1090,6 +1090,38 @@ _DEACTIVATED_ACCOUNT_PATTERNS: tuple[str, ...] = (
     "account was deleted",
 )
 
+_TRANSIENT_LOGIN_HTTP_STATUSES: frozenset[int] = frozenset({
+    403, 408, 409, 425, 429, 500, 502, 503, 504,
+})
+_LOGIN_HTTP_STATUS_RE = re.compile(r"\bHTTP\s+(\d{3})\b", re.IGNORECASE)
+
+
+def login_error_http_status(exc: BaseException | str | None) -> int | None:
+    """Return a login endpoint HTTP status without exposing response bodies."""
+    if exc is None:
+        return None
+    message = exc if isinstance(exc, str) else str(exc)
+    match = _LOGIN_HTTP_STATUS_RE.search(message)
+    return int(match.group(1)) if match else None
+
+
+def is_transient_login_error(exc: BaseException | str) -> bool:
+    """True for upstream/WAF/state failures that should be retried."""
+    status = login_error_http_status(exc)
+    message = exc if isinstance(exc, str) else str(exc)
+    lower = message.lower()
+    verification_endpoint_error = any(
+        marker in lower for marker in ("password verify failed", "mfa verify failed")
+    )
+    if verification_endpoint_error and status is not None:
+        return status not in {400, 401, 422}
+    if status in _TRANSIENT_LOGIN_HTTP_STATUSES:
+        return True
+    return any(marker in lower for marker in (
+        "timeout", "timed out", "network error", "connection reset",
+        "connection refused", "tls connect error", "curl: (",
+    ))
+
 
 def is_transient_login_state_error(exc: BaseException | str) -> bool:
     """True cho HTTP 409 do login/OAuth state hết hiệu lực, không phải credential."""
@@ -1135,6 +1167,17 @@ def is_fatal_login_error(exc: BaseException | str) -> bool:
         return True
     if is_transient_login_state_error(lower) or is_cloudflare_challenge_error(lower):
         return False
+    # A non-credential HTTP response from password/MFA verification is not
+    # proof that the supplied account data is wrong.  In particular, OpenAI's
+    # auth edge can return 403/429/5xx during WAF challenges or rate limits.
+    # Keep those retryable so passkey jobs do not become permanently
+    # `invalid_credentials` after a single transient response.
+    status = login_error_http_status(lower)
+    verification_endpoint_error = any(
+        marker in lower for marker in ("password verify failed", "mfa verify failed")
+    )
+    if verification_endpoint_error and status is not None:
+        return status in {400, 401, 422}
     return any(pat in lower for pat in NON_RETRYABLE_LOGIN_PATTERNS)
 
 

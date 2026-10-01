@@ -135,8 +135,27 @@ class FilteredExportApiTests(unittest.TestCase):
     def test_passkey_handoff_routes_are_registered(self) -> None:
         route_paths = {route.path for route in server.app.routes}
 
+        self.assertIn("/passkey", route_paths)
         self.assertIn("/api/jobs/{job_id}/passkey/start", route_paths)
         self.assertIn("/api/passkey/launch/{launch_token}", route_paths)
+
+    def test_passkey_page_is_a_dedicated_route(self) -> None:
+        response = self.client.get("/passkey")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('id="passkey-workspace"', response.text)
+        self.assertNotIn('<dialog id="passkey-workspace"', response.text)
+        self.assertEqual(response.headers["cache-control"], "no-store, max-age=0")
+        self.assertEqual(response.headers["pragma"], "no-cache")
+        self.assertIn("passkey-ui.js?v=1.1.2", response.text)
+
+    def test_passkey_ui_script_is_never_cached(self) -> None:
+        response = self.client.get("/assets/passkey-ui.js")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["cache-control"], "no-store, max-age=0")
+        self.assertEqual(response.headers["pragma"], "no-cache")
+        self.assertNotIn("window.confirm(", response.text)
 
     def test_returns_no_store_text_attachment_and_count(self) -> None:
         response = self.client.get(

@@ -24,6 +24,8 @@ class PasskeyJob:
     email: str
     password: str
     secret: str
+    window_index: int = 1
+    window_total: int = 1
     status: str = "queued"
     phase: str = "queued"
     error: str | None = None
@@ -44,6 +46,8 @@ class PasskeyJob:
         return {
             "id": self.id,
             "email": self.email,
+            "window_index": self.window_index,
+            "window_total": self.window_total,
             "status": self.status,
             "phase": self.phase,
             "error": self.error,
@@ -164,7 +168,7 @@ class PasskeyJobManager:
         normalized = email.strip().casefold()
         return any(
             job.email.casefold() == normalized
-            and (job.status not in TERMINAL or job.status == "success")
+            and job.status not in TERMINAL
             for job in self.jobs.values()
         )
 
@@ -182,14 +186,22 @@ class PasskeyJobManager:
             email, password, secret = self.parse_combo(line)
             if email in seen:
                 continue
-            if self.has_job(email):
-                raise ValueError(f"{email}: đã có trong danh sách passkey; hãy xóa job cũ trước")
+            if self.is_busy(email):
+                raise ValueError(f"{email}: đang chuẩn bị passkey; vui lòng chờ")
             seen.add(email)
             parsed.append((email, password, secret))
 
         created: list[dict[str, Any]] = []
-        for email, password, secret in parsed:
-            job = PasskeyJob(id=uuid.uuid4().hex, email=email, password=password, secret=secret)
+        window_total = len(parsed)
+        for window_index, (email, password, secret) in enumerate(parsed, start=1):
+            job = PasskeyJob(
+                id=uuid.uuid4().hex,
+                email=email,
+                password=password,
+                secret=secret,
+                window_index=window_index,
+                window_total=window_total,
+            )
             self.jobs[job.id] = job
             self.order.append(job.id)
             self._queue.put_nowait(job.id)
@@ -218,6 +230,11 @@ class PasskeyJobManager:
         job.logs[:] = job.logs[-100:]
         self._broadcast(job)
 
+    def _safe_service_log(self, job: PasskeyJob, message: str) -> None:
+        """Keep login diagnostics to fixed, credential-free milestones."""
+        if str(message).startswith(("[auth]", "[login]")):
+            self._append_log(job, "[auth] Đăng nhập tạm thời chưa thành công; đang thử lại...")
+
     async def _run(self, job: PasskeyJob) -> None:
         try:
             job.status = "running"
@@ -231,6 +248,7 @@ class PasskeyJobManager:
                 password=job.password,
                 secret=job.secret,
                 timeout=self.job_timeout,
+                log=lambda message: self._safe_service_log(job, message),
             )
             job.handoff_url = url
             job.phase = "handoff_ready"
@@ -270,6 +288,8 @@ class PasskeyJobManager:
         job = self._require(job_id)
         if job.status not in TERMINAL or not job.retryable:
             raise ValueError("Job không thể chạy lại")
+        if self.is_busy(job.email):
+            raise ValueError("Tài khoản đang chuẩn bị passkey ở job khác; vui lòng chờ")
         job.status = "queued"
         job.phase = "queued"
         job.error = None

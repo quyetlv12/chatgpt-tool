@@ -505,15 +505,40 @@ td.account span,.account-result small{font-size:.58rem;line-height:1.45}
 .password-row-error{display:block;max-width:260px;margin-top:5px;color:#f5a6a6;font-size:.56rem;line-height:1.35}
 .password-log-modal pre{max-height:48vh;overflow:auto;padding:13px;border:1px solid var(--line);border-radius:10px;background:#071f32;color:#b8d9e7;font:600 .65rem/1.55 "SFMono-Regular",Consolas,monospace;white-space:pre-wrap}
 .passkey-workspace-head{background:radial-gradient(circle at 70% 0,rgba(85,237,189,.14),transparent 42%),rgba(10,39,60,.78)}
+.passkey-workspace[open]{grid-template-rows:auto minmax(230px,.72fr) minmax(360px,1.38fr)}
 .passkey-workspace .password-pane textarea:focus{border-color:var(--success);box-shadow:0 0 0 3px rgba(85,237,189,.1)}
+.passkey-queue-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+.passkey-queue-actions .button:disabled{opacity:.58;cursor:wait}
 .passkey-open-link{height:30px;display:inline-flex;align-items:center;gap:6px;padding:0 9px;border:1px solid rgba(85,237,189,.38);border-radius:8px;background:rgba(37,145,112,.16);color:#aaffdf;font-size:.58rem;font-weight:800;text-decoration:none;white-space:nowrap}
 .passkey-open-link:hover{border-color:var(--success);color:#fff}
 .passkey-opened{color:#82edc5;font-size:.58rem;font-weight:800;white-space:nowrap}
 .passkey-phase{border-color:rgba(85,237,189,.32);background:rgba(37,145,112,.14);color:#9cf5d8}
 
+/* Dedicated passkey route: full-width workspace instead of a constrained modal. */
+.passkey-route{min-width:320px;overflow:auto;background:#06111f}
+.passkey-route-shell{position:relative;z-index:1;width:min(1880px,calc(100% - 32px));margin:0 auto;padding:16px 0}
+.passkey-page{width:100%;min-height:calc(100dvh - 32px);display:grid;grid-template-rows:auto minmax(420px,.9fr) minmax(480px,1.1fr);margin:0;border:1px solid rgba(120,202,235,.28);border-radius:22px;background:linear-gradient(145deg,#0d3049,#071d30 62%,#0b2b42);color:var(--text);box-shadow:0 24px 80px rgba(0,0,0,.46);overflow:hidden}
+.passkey-page .passkey-workspace-head{min-height:112px;padding:22px 28px}
+.passkey-page .passkey-workspace-head>div:first-child{min-width:0;max-width:1280px}
+.passkey-page .passkey-workspace-head h1{margin:4px 0 4px;font-family:var(--font-display);font-size:1.45rem;line-height:1.2}
+.passkey-page .passkey-workspace-head p{max-width:1180px;margin:0;color:var(--muted);font-size:.72rem;line-height:1.55}
+.passkey-back{text-decoration:none;white-space:nowrap}
+.passkey-page .passkey-workbench{grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);gap:16px;padding:16px 20px}
+.passkey-page .password-pane{padding:18px}
+.passkey-page .password-pane h2,.passkey-page .passkey-queue h2{margin:3px 0 0;font-family:var(--font-display);font-size:1.08rem}
+.passkey-page .password-pane textarea{min-height:220px;font-size:.72rem;line-height:1.6;resize:vertical}
+.passkey-page .passkey-queue{min-height:440px;margin:0 20px 20px;padding:18px 20px}
+.passkey-page .password-table-wrap{min-height:340px;scrollbar-gutter:stable}
+.passkey-page .password-table-wrap th:nth-child(1){width:34%}
+.passkey-page .password-table-wrap th:nth-child(2){width:18%}
+.passkey-page .password-table-wrap th:nth-child(3){width:32%}
+.passkey-page .password-table-wrap th:last-child{width:16%}
+.passkey-page .password-table-wrap td{padding-top:12px;padding-bottom:12px}
+
 @media(max-width:900px){
   .password-workspace{width:98vw;height:97vh;border-radius:14px}
   .password-workspace[open]{grid-template-rows:auto auto minmax(300px,1.25fr) minmax(210px,.8fr)}
+  .passkey-workspace[open]{grid-template-rows:auto minmax(390px,1.12fr) minmax(300px,.88fr)}
   .password-workspace-head{align-items:flex-start;padding:15px;flex-direction:column;gap:10px}
   .password-workspace-actions{width:100%;flex-wrap:wrap}
   .password-target-editor{grid-template-columns:minmax(0,1fr) auto;gap:9px 12px;padding:11px 15px}
@@ -521,17 +546,29 @@ td.account span,.account-result small{font-size:.58rem;line-height:1.45}
   .password-workbench{grid-template-columns:1fr;overflow:auto}
   .password-pane{min-height:225px}
   .password-queue{margin:0 10px 10px;overflow:hidden}
+  .passkey-queue-actions{width:100%;justify-content:flex-start}
+  .passkey-route-shell{width:calc(100% - 20px);padding:10px 0}
+  .passkey-page{min-height:calc(100dvh - 20px);grid-template-rows:auto auto minmax(380px,1fr);border-radius:15px}
+  .passkey-page .passkey-workspace-head{min-height:0;padding:17px;flex-direction:column;align-items:flex-start}
+  .passkey-page .password-workspace-actions{width:100%;justify-content:space-between}
+  .passkey-page .passkey-workbench{grid-template-columns:1fr;padding:12px}
+  .passkey-page .password-pane{min-height:300px}
+  .passkey-page .passkey-queue{min-height:380px;margin:0 12px 12px}
 }
 
 @media(max-width:680px){
   .password-setting-actions{grid-template-columns:1fr}
   .password-workspace[open]{grid-template-rows:auto auto minmax(260px,1.25fr) minmax(180px,.8fr)}
+  .passkey-workspace[open]{grid-template-rows:auto minmax(390px,1.15fr) minmax(260px,.85fr)}
   .password-workspace-actions .button span{display:none}
   .password-configured-badge{font-size:.52rem}
   .password-target-editor{grid-template-columns:1fr}
   .password-target-editor-copy{grid-column:auto}
   .password-target-editor-copy small{white-space:normal}
   .password-target-editor .button{width:100%;justify-content:center}
+  .passkey-page .password-workspace-actions{align-items:stretch;flex-direction:column}
+  .passkey-page .passkey-back{justify-content:center}
+  .passkey-page .passkey-queue{padding:14px 12px}
 }
 
 /* Searchable password history: compact archive cards without dead modal space. */

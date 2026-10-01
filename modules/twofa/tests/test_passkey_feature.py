@@ -58,12 +58,30 @@ class PasskeyHttpTests(IsolatedAsyncioTestCase):
                     {'name':'auth-only','value':'private','domain':'auth.openai.com'},
                 ]})
         self.assertEqual(result, URL)
-        transport.cookies.set.assert_called_once_with('__Secure-next-auth.session-token','synthetic-cookie',domain='.chatgpt.com',path='/')
+        self.assertEqual(transport.cookies.set.call_count, 2)
+        self.assertIn(
+            (('__Secure-next-auth.session-token', 'synthetic-cookie'),
+             {'domain': '.chatgpt.com', 'path': '/'}),
+            transport.cookies.set.call_args_list,
+        )
+        self.assertIn(
+            (('auth-only', 'private'), {'domain': 'auth.openai.com', 'path': '/'}),
+            transport.cookies.set.call_args_list,
+        )
         transport.get.assert_not_awaited()
         transport.post.assert_awaited_once()
         args, kwargs = transport.post.call_args
         self.assertEqual(args[0], 'https://chatgpt.com/backend-api/accounts/mfa/user/request_mfa_token_in_house')
         self.assertEqual(kwargs['headers']['Authorization'], 'Bearer synthetic-token')
+        self.assertEqual(kwargs['headers']['Accept'], '*/*')
+        self.assertEqual(kwargs['headers']['Origin'], 'https://chatgpt.com')
+        self.assertEqual(kwargs['headers']['Referer'], 'https://chatgpt.com/auth/enroll_mfa?factor=passkey')
+        self.assertEqual(kwargs['headers']['x-openai-target-path'], '/backend-api/accounts/mfa/user/request_mfa_token_in_house')
+        self.assertEqual(kwargs['headers']['x-openai-target-route'], '/backend-api/accounts/mfa/user/request_mfa_token_in_house')
+        self.assertEqual(kwargs['headers']['OAI-Language'], 'en-US')
+        for header in ('sec-ch-ua', 'sec-ch-ua-mobile', 'sec-ch-ua-platform',
+                       'sec-fetch-dest', 'sec-fetch-mode', 'sec-fetch-site'):
+            self.assertIn(header, kwargs['headers'])
         self.assertFalse(kwargs['allow_redirects'])
 
     async def test_unexpected_html_or_redirect_fails_closed(self):
@@ -97,13 +115,58 @@ class PasskeyServiceTests(IsolatedAsyncioTestCase):
             await service.prepare_passkey(email='demo@example.com',password='synthetic',secret='TEST',timeout=30)
         self.assertNotIn('secret-token',str(error.exception))
 
-    async def test_login_is_not_retried_and_error_identifies_stage(self):
+    async def test_login_retries_transient_failure_and_error_stays_safe(self):
         login = AsyncMock(side_effect=RuntimeError('secret-token'))
         service = TwoFAService(login_fn=login, retry_delay=0)
-        with self.assertRaisesRegex(TwoFAFlowError, 'đăng nhập') as error:
+        with self.assertRaisesRegex(TwoFAFlowError, 'Đăng nhập') as error:
             await service.prepare_passkey(email='demo@example.com',password='synthetic',secret='TEST',timeout=30)
-        login.assert_awaited_once()
+        self.assertEqual(login.await_count, 3)
         self.assertNotIn('secret-token', str(error.exception))
+
+    async def test_login_retry_can_recover_before_handoff(self):
+        login = AsyncMock(side_effect=[RuntimeError('temporary transport failure'), {'accessToken': 'synthetic-token'}])
+        service = TwoFAService(login_fn=login, retry_delay=0)
+        with patch('passkey_service.prepare_passkey_url', new=AsyncMock(return_value=URL)):
+            self.assertEqual(
+                await service.prepare_passkey(
+                    email='demo@example.com', password='synthetic', secret='TEST', timeout=30,
+                ),
+                URL,
+            )
+        self.assertEqual(login.await_count, 2)
+
+    async def test_transient_login_status_retries_and_switches_to_legacy_flow(self):
+        calls = []
+
+        async def login(**kwargs):
+            calls.append(kwargs)
+            if len(calls) == 1:
+                raise RuntimeError('password verify failed: HTTP 403 - upstream response')
+            return {'accessToken': 'synthetic-token'}
+
+        service = TwoFAService(login_fn=None, retry_delay=0)
+        with patch.object(service, '_resolve_dependencies', return_value=(login, None)), \
+             patch('passkey_service.prepare_passkey_url', new=AsyncMock(return_value=URL)):
+            self.assertEqual(
+                await service.prepare_passkey(
+                    email='demo@example.com', password='synthetic', secret='TEST', timeout=30,
+                ),
+                URL,
+            )
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[1].get('login_flow'), 'legacy')
+
+    async def test_login_failure_does_not_echo_nested_error(self):
+        login = AsyncMock(side_effect=TwoFAFlowError(
+            'upstream secret-token', error_kind='invalid_credentials', account_state='unknown',
+        ))
+        service = TwoFAService(login_fn=login, login_attempts=1)
+        with self.assertRaises(TwoFAFlowError) as error:
+            await service.prepare_passkey(
+                email='demo@example.com', password='synthetic', secret='TEST', timeout=30,
+            )
+        self.assertNotIn('secret-token', str(error.exception))
+        self.assertEqual(error.exception.error_kind, 'invalid_credentials')
 
     async def test_whole_preparation_has_one_deadline(self):
         async def slow_login(**_):

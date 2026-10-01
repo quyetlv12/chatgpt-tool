@@ -26,28 +26,87 @@ def validate_passkey_url(url: str) -> str:
 async def prepare_passkey_url(*, session_data: dict, timeout: float = 20.0) -> str:
     """Mirror BrowserMfaEnrollPage: request an MFA token, not an HTML redirect."""
     from curl_cffi.requests import AsyncSession
-    from user_agent_profile import CURL_IMPERSONATE_PRIMARY, WINDOWS_USER_AGENT
+    from user_agent_profile import (
+        CURL_IMPERSONATE_PRIMARY,
+        SEC_CH_UA,
+        SEC_CH_UA_MOBILE,
+        SEC_CH_UA_PLATFORM,
+        WINDOWS_USER_AGENT,
+    )
 
     token = session_data.get("accessToken")
     cookies = session_data.get("__cookies")
     if not isinstance(token, str) or not token.strip() or not isinstance(cookies, list):
         raise ValueError("Authenticated session required")
+    # Keep the complete browser session cookie set for the backend request.
+    # In particular, __cf_bm/cf_clearance are scoped to chatgpt.com and the
+    # device cookie may be scoped to .openai.com.  Dropping either one makes a
+    # fresh curl session look unlike the authenticated browser and commonly
+    # produces a WAF HTTP 403 even though the login just succeeded.
+    def _allowed_cookie_domain(value: object) -> bool:
+        if not isinstance(value, str):
+            return False
+        domain = value.lstrip(".").casefold()
+        return domain in {"chatgpt.com", "openai.com"} or domain.endswith(
+            (".chatgpt.com", ".openai.com")
+        )
+
     cookies = [c for c in cookies if isinstance(c, dict)
-               and c.get("domain") in {"chatgpt.com", ".chatgpt.com"}
+               and _allowed_cookie_domain(c.get("domain"))
                and isinstance(c.get("name"), str) and isinstance(c.get("value"), str)]
     if not any(c["name"] in {"__Secure-next-auth.session-token", "__Secure-next-auth.session-token.0"}
                and c["value"] for c in cookies):
         raise ValueError("Authenticated session cookie required")
+    target = "/backend-api/accounts/mfa/user/request_mfa_token_in_house"
+    headers = {
+        "Accept": "*/*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "User-Agent": WINDOWS_USER_AGENT,
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+        "Origin": "https://chatgpt.com",
+        "Referer": "https://chatgpt.com/auth/enroll_mfa?factor=passkey",
+        "sec-ch-ua": SEC_CH_UA,
+        "sec-ch-ua-mobile": SEC_CH_UA_MOBILE,
+        "sec-ch-ua-platform": SEC_CH_UA_PLATFORM,
+        "sec-fetch-dest": "empty",
+        "sec-fetch-mode": "cors",
+        "sec-fetch-site": "same-origin",
+        "x-openai-target-path": target,
+        "x-openai-target-route": target,
+        "OAI-Language": "en-US",
+    }
+    device_id = next(
+        (c["value"].strip() for c in cookies
+         if c["name"] in {"oai-did", "oai-device-id"} and c["value"].strip()),
+        None,
+    )
+    if device_id:
+        headers["oai-device-id"] = device_id
+    account = session_data.get("account")
+    account_id = next(
+        (
+            str(candidate).strip()
+            for candidate in (
+                session_data.get("accountId"),
+                session_data.get("account_id"),
+                account.get("id") if isinstance(account, dict) else None,
+                account.get("accountId") if isinstance(account, dict) else None,
+            )
+            if isinstance(candidate, str) and candidate.strip()
+            and len(candidate.strip()) <= 256
+            and "\r" not in candidate and "\n" not in candidate
+        ),
+        None,
+    )
+    if account_id:
+        headers["ChatGPT-Account-Id"] = account_id
     async with AsyncSession(impersonate=CURL_IMPERSONATE_PRIMARY) as session:
         for cookie in cookies:
             session.cookies.set(cookie["name"], cookie["value"],
                                 domain=cookie["domain"], path=cookie.get("path") or "/")
         response = await session.post(
-            "https://chatgpt.com/backend-api/accounts/mfa/user/request_mfa_token_in_house",
-            headers={"Accept": "application/json", "User-Agent": WINDOWS_USER_AGENT,
-                     "Authorization": f"Bearer {token}", "Content-Type": "application/json",
-                     "Origin": "https://chatgpt.com",
-                     "Referer": "https://chatgpt.com/auth/enroll_mfa?factor=passkey"},
+            f"https://chatgpt.com{target}", headers=headers,
             timeout=timeout, allow_redirects=False,
         )
     if response.status_code != 200:

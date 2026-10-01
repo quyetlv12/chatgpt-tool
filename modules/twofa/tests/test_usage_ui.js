@@ -133,7 +133,7 @@ assert.match(appSource, /view\.resetCreditLabel/);
 assert.match(appSource, /usage-reset-credit/);
 assert.match(htmlSource, /usage-ui\.js\?v=1\.3\.9/);
 assert.match(htmlSource, /app\.js\?v=1\.3\.35/);
-assert.match(htmlSource, /dashboard\.css\?v=1\.5\.16/);
+assert.match(htmlSource, /dashboard\.css\?v=1\.5\.19/);
 assert.match(appSource, /icon\('list-details'\)/);
 assert.match(appSource, /job\.status === 'queued'/);
 assert.match(appSource, /Chờ worker…/);

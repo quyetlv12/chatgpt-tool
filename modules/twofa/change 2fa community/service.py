@@ -89,22 +89,33 @@ class TwoFAService:
         from session_phase import (
             classify_account_check_error,
             is_fatal_login_error,
+            login_error_http_status,
+            is_transient_login_error,
         )
 
         default_login, _ = self._resolve_dependencies()
         login_fn = self._login_fn or default_login
         last_error: BaseException | None = None
         attempts = self._login_attempts if attempts is None else attempts
+        # The anti-409 flow is fastest, but a WAF/state response can be tied to
+        # that exact request shape.  A retry with the legacy state machine gets
+        # a fresh OAuth state and avoids turning a valid account into a fatal
+        # credential error.  Injected test/custom login functions keep their
+        # original signature and never receive this optional argument.
+        fallback_login_flow: str | None = None
         for attempt in range(1, attempts + 1):
             try:
+                login_kwargs: dict[str, Any] = {
+                    "email": email,
+                    "password": password,
+                    "secret": secret,
+                    "proxy": None,
+                    "log": log,
+                }
+                if self._login_fn is None and fallback_login_flow:
+                    login_kwargs["login_flow"] = fallback_login_flow
                 session = await asyncio.wait_for(
-                    login_fn(
-                        email=email,
-                        password=password,
-                        secret=secret,
-                        proxy=None,
-                        log=log,
-                    ),
+                    login_fn(**login_kwargs),
                     timeout=timeout,
                 )
                 token = session.get("accessToken")
@@ -117,21 +128,36 @@ class TwoFAService:
                 last_error = exc
                 if is_fatal_login_error(exc) or attempt >= attempts:
                     break
-                log(f"[login] lần {attempt}/{attempts} chưa thành công — thử lại...")
+                if self._login_fn is None and is_transient_login_error(exc):
+                    fallback_login_flow = "legacy"
+                    status = login_error_http_status(exc)
+                    detail = f" HTTP {status}" if status is not None else ""
+                    log(
+                        f"[login] lỗi tạm thời{detail}; lần {attempt + 1}/{attempts} "
+                        "sẽ làm mới OAuth state..."
+                    )
+                else:
+                    log(f"[login] lần {attempt}/{attempts} chưa thành công — thử lại...")
                 await asyncio.sleep(self._retry_delay)
         detail = str(last_error).strip() if last_error else "unknown login error"
-        account_state = (
-            "die"
-            if classify_account_check_error(last_error) == "deactivated"
-            else "unknown"
-        )
-        error_kind = (
-            "account_die"
-            if account_state == "die"
-            else "invalid_credentials"
-            if last_error is not None and is_fatal_login_error(last_error)
-            else "technical_error"
-        )
+        if isinstance(last_error, TwoFAFlowError):
+            # Preserve an already-safe classification from an injected/login
+            # adapter without copying its potentially sensitive message.
+            account_state = last_error.account_state
+            error_kind = last_error.error_kind
+        else:
+            account_state = (
+                "die"
+                if classify_account_check_error(last_error) == "deactivated"
+                else "unknown"
+            )
+            error_kind = (
+                "account_die"
+                if account_state == "die"
+                else "invalid_credentials"
+                if last_error is not None and is_fatal_login_error(last_error)
+                else "technical_error"
+            )
         label = "Tài khoản die" if account_state == "die" else "Đăng nhập thất bại"
         raise TwoFAFlowError(
             f"{label}: {detail[:220]}",
@@ -367,14 +393,24 @@ class TwoFAService:
 
     async def prepare_passkey(
         self, *, email: str, password: str, secret: str, timeout: float,
+        log: LogFn | None = None,
     ) -> str:
         from passkey_service import PasskeyPreparationError, prepare_passkey_url
 
         stage = "đăng nhập lại"
         cancelled = False
+
+        def safe_login_log(message: str) -> None:
+            # get_session_pure_request() has verbose protocol diagnostics. The
+            # bulk passkey queue must never expose those (URLs, identities,
+            # challenge IDs, or response fragments), so forward only the fixed
+            # retry milestone from _login.
+            if log is not None and str(message).startswith("[login]"):
+                log("[auth] Đăng nhập tạm thời chưa thành công; đang thử lại...")
+
         login_task = asyncio.create_task(self._login(
             email=email, password=password, secret=secret, timeout=None,
-            log=lambda _message: None, attempts=1,
+            log=safe_login_log, attempts=self._login_attempts,
         ))
         try:
             async with asyncio.timeout(min(timeout, 180.0)):
@@ -390,6 +426,14 @@ class TwoFAService:
             cancelled = True
         except TimeoutError as exc:
             raise TwoFAFlowError(f"Bước {stage} quá thời gian chờ. Chưa thêm passkey; hãy thử lại.") from exc
+        except TwoFAFlowError as exc:
+            if stage == "đăng nhập lại":
+                raise TwoFAFlowError(
+                    "Đăng nhập lại không thành công sau các lần thử; hãy kiểm tra mật khẩu, 2FA hiện tại và kết nối.",
+                    error_kind=exc.error_kind,
+                    account_state=exc.account_state,
+                ) from exc
+            raise
         except PasskeyPreparationError as exc:
             raise TwoFAFlowError(str(exc)) from exc
         except Exception as exc:

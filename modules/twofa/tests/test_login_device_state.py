@@ -10,7 +10,12 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from session_phase import get_session_pure_request  # noqa: E402
+from session_phase import (  # noqa: E402
+    get_session_pure_request,
+    is_fatal_login_error,
+    is_transient_login_error,
+    login_error_http_status,
+)
 
 
 class _Cookies:
@@ -97,6 +102,22 @@ class LoginDeviceStateTests(unittest.IsolatedAsyncioTestCase):
         initial_device = device_cookies["chatgpt.com"]
         self.assertIn(("oai-did", initial_device, "auth.openai.com"), session.cookies.set_calls)
         self.assertEqual(sentinel_device_ids, ["server-device"])
+
+
+class LoginErrorClassificationTests(unittest.TestCase):
+    def test_transient_verification_statuses_are_not_invalid_credentials(self) -> None:
+        for status in (302, 403, 404, 408, 409, 429, 500, 502, 503, 504):
+            message = f"password verify failed: HTTP {status} - upstream response"
+            with self.subTest(status=status):
+                self.assertEqual(login_error_http_status(message), status)
+                self.assertTrue(is_transient_login_error(message))
+                self.assertFalse(is_fatal_login_error(message))
+
+    def test_credential_statuses_remain_fatal(self) -> None:
+        for status in (400, 401, 422):
+            message = f"password verify failed: HTTP {status} - invalid credentials"
+            with self.subTest(status=status):
+                self.assertTrue(is_fatal_login_error(message))
 
 
 if __name__ == "__main__":

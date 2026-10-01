@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import certifi
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, SecretStr
@@ -50,6 +50,7 @@ def resolve_runtime_dir(
 RUNTIME_DIR = Path(os.environ.get("SHOPTAIKHOAN_TWOFA_DATA_DIR") or resolve_runtime_dir()).expanduser()
 DB_PATH = RUNTIME_DIR / "twofa.db"
 RUNTIME_PORT = 5033
+RUNTIME_HOST = "127.0.0.1"
 
 
 def _migrate_legacy_database() -> None:
@@ -100,6 +101,9 @@ from passkey_jobs import PasskeyJobManager  # noqa: E402
 from password_jobs import PasswordJobManager  # noqa: E402
 from service import TwoFAFlowError  # noqa: E402
 from passkey_service import PasskeyHandoffs  # noqa: E402
+from passkey_windows import PasskeyWindows  # noqa: E402
+
+passkey_windows = PasskeyWindows()
 
 
 RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
@@ -145,6 +149,7 @@ class PasskeyRequest(BaseModel):
 
 class PasskeyLaunchRequest(BaseModel):
     confirm: Literal["LAUNCH_PASSKEY"]
+    native_window: bool = False
 
 
 class PasswordSettingsRequest(BaseModel):
@@ -200,6 +205,16 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+
+@app.middleware("http")
+async def disable_passkey_ui_cache(request: Request, call_next):
+    """Keep an already-open admin page from reusing stale passkey handlers."""
+    response = await call_next(request)
+    if request.url.path in {"/passkey", "/assets/passkey-ui.js"}:
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+    return response
 
 
 def require_token(x_auth_token: str | None = Header(default=None)) -> None:
@@ -429,8 +444,22 @@ async def add_passkey_jobs(request: PasskeyBatchRequest) -> dict[str, Any]:
 async def launch_passkey_job(job_id: str, _request: PasskeyLaunchRequest) -> JSONResponse:
     try:
         token = passkey_manager.issue_handoff(job_id, passkey_handoffs)
+        launch_path = f"/api/passkey/launch/{token}"
+        opened = False
+        if _request.native_window:
+            host = f"[{RUNTIME_HOST}]" if RUNTIME_HOST == "::1" else RUNTIME_HOST
+            job = passkey_manager.jobs.get(job_id)
+            if job is None:
+                raise KeyError(job_id)
+            # Starting a separate Chrome process can take time; never block workers/SSE.
+            opened = await asyncio.to_thread(
+                passkey_windows.open,
+                f"http://{host}:{RUNTIME_PORT}{launch_path}",
+                index=job.window_index,
+                total=job.window_total,
+            )
         return JSONResponse(
-            {"launch_path": f"/api/passkey/launch/{token}"},
+            {"launch_path": launch_path, "opened": opened},
             headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
         )
     except KeyError as exc:
@@ -447,6 +476,12 @@ async def retry_passkey_job(job_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail="Không tìm thấy passkey job") from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post("/api/passkey/windows/close", dependencies=[Depends(require_token)])
+async def close_passkey_windows() -> dict[str, int]:
+    closed = await asyncio.to_thread(passkey_windows.close_all)
+    return {"closed": closed}
 
 
 @app.post("/api/passkey/jobs/{job_id}/stop", dependencies=[Depends(require_token)])
@@ -841,6 +876,11 @@ def index() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
 
 
+@app.get("/passkey")
+def passkey_page() -> FileResponse:
+    return FileResponse(STATIC_DIR / "passkey.html")
+
+
 def _open_browser_when_ready(host: str, port: int) -> None:
     url = f"http://{host if host != '::1' else '127.0.0.1'}:{port}/"
 
@@ -861,7 +901,7 @@ def _open_browser_when_ready(host: str, port: int) -> None:
 
 
 def main() -> None:
-    global RUNTIME_PORT
+    global RUNTIME_PORT, RUNTIME_HOST
     parser = argparse.ArgumentParser(description="Shoptaikhoan Tool localhost")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=5033)
@@ -894,6 +934,7 @@ def main() -> None:
     if not 1 <= args.port <= 65535:
         parser.error("Port phải nằm trong khoảng 1..65535")
     RUNTIME_PORT = args.port
+    RUNTIME_HOST = "twofa.localhost" if args.uds else args.host
     import uvicorn
 
     menu_bar_process = None if args.uds or os.environ.get("SHOPTAIKHOAN_NO_MENU_BAR") == "1" else launch_menu_bar(args.host, args.port)
