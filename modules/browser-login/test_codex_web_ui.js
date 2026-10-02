@@ -34,12 +34,13 @@ function setup() {
   const {ctx,$,calls,messages} = setup();
   await $('btn-codex-web-login').click();
   assert.equal(calls.length,0); assert.match(messages.at(-1),/hợp lệ/);
-  $('codex-web-accounts-input').value='demo@example.test|synthetic|\nsecond@example.test|synthetic|';
+  const accountsInput='demo@example.test|synthetic|\nsecond@example.test|synthetic|';
+  $('codex-web-accounts-input').value=accountsInput;
   $('codex-web-workers-input').value='2';
   await $('btn-codex-web-login').click();
   assert.equal(calls[0].url,'/api/codex-web/start');
   assert.deepEqual(JSON.parse(calls[0].options.body),{accounts:['demo@example.test|synthetic|','second@example.test|synthetic|'],workers:2});
-  assert.equal($('codex-web-accounts-input').value,'');
+  assert.equal($('codex-web-accounts-input').value,accountsInput,'account input is preserved after starting');
   assert.equal($('btn-codex-web-login').disabled,true);
   const before=calls.length;
   await $('btn-codex-web-stop').click();

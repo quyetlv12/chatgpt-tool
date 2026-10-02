@@ -152,6 +152,64 @@ class SuiteManager:
         for module in self.modules:
             module.socket_path.unlink(missing_ok=True)
 
+    def _request_module_json(
+        self,
+        module: Module,
+        method: str,
+        path: str,
+        *,
+        headers: dict[str, str] | None = None,
+    ) -> tuple[int, dict[str, object]]:
+        """Make a private control request over a module's Unix socket."""
+        connection = UnixHTTPConnection(module.socket_path, timeout=2)
+        try:
+            request_headers = {"Connection": "close", **(headers or {})}
+            connection.request(method, path, headers=request_headers)
+            response = connection.getresponse()
+            payload = response.read()
+            try:
+                data = json.loads(payload.decode("utf-8")) if payload else {}
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                data = {}
+            return response.status, data if isinstance(data, dict) else {}
+        finally:
+            connection.close()
+
+    def close_all_browser_windows(self) -> dict[str, object]:
+        """Close every Chrome window owned by any Suite module."""
+        result: dict[str, object] = {"twofa": 0, "browser": False}
+        modules = {module.key: module for module in self.modules}
+
+        twofa = modules.get("twofa")
+        if twofa:
+            try:
+                # The TwoFA API is token-protected. Read the token only over
+                # the private Unix socket and never return it to the client.
+                status, bootstrap = self._request_module_json(twofa, "GET", "/api/bootstrap")
+                token = bootstrap.get("token") if status == 200 else None
+                if isinstance(token, str) and token:
+                    status, payload = self._request_module_json(
+                        twofa,
+                        "POST",
+                        "/api/passkey/windows/close",
+                        headers={"X-Auth-Token": token},
+                    )
+                    if status == 200:
+                        result["twofa"] = int(payload.get("closed") or 0)
+            except (OSError, ValueError, TypeError):
+                pass
+
+        browser = modules.get("browser")
+        if browser:
+            try:
+                status, payload = self._request_module_json(browser, "POST", "/api/browser/windows/close")
+                if status == 200:
+                    result["browser"] = bool(payload.get("closed"))
+            except (OSError, ValueError, TypeError):
+                pass
+        result["closed"] = int(result["twofa"]) + int(bool(result["browser"]))
+        return result
+
 
 def create_hub_server(host: str, port: int, manager: SuiteManager, web_root: Path) -> ThreadingHTTPServer:
     class Handler(BaseHTTPRequestHandler):
@@ -222,6 +280,10 @@ def create_hub_server(host: str, port: int, manager: SuiteManager, web_root: Pat
         def do_POST(self) -> None:
             if module := self._module():
                 self._proxy(module)
+                return
+            if self.path.split("?", 1)[0] == "/api/windows/close":
+                body = json.dumps(manager.close_all_browser_windows(), ensure_ascii=False).encode("utf-8")
+                self._send(200, body, "application/json; charset=utf-8")
                 return
             if self.path.split("?", 1)[0] != "/api/shutdown":
                 self._send(404, b"Not found", "text/plain; charset=utf-8")

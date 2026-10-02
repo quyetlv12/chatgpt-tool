@@ -14,16 +14,18 @@ Flow:
 from __future__ import annotations
 
 import asyncio
+import calendar
 import re
 import secrets
 import shutil
 import string
 import time
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlparse
+from zoneinfo import ZoneInfo
 
 from _browser_retry import (
     LAUNCH_RETRY_BACKOFF as _LAUNCH_RETRY_BACKOFF,
@@ -48,6 +50,7 @@ LogFn = Callable[[str], None]
 _AUTH_SUBMIT_TIMEOUT_MS = 2_000
 _POST_PASSWORD_REDIRECT_TIMEOUT_SECONDS = 45.0
 _SESSION_COOKIE_TIMEOUT_SECONDS = 60.0
+_ACCOUNT_DATE_TIMEZONE = ZoneInfo("Asia/Ho_Chi_Minh")
 
 
 class SessionError(Exception):
@@ -2059,7 +2062,13 @@ def _parse_entitlement_plan(data: dict[str, Any]) -> dict[str, Any]:
 
     Mọi shape thiếu/sai → trả blank (không raise) để caller fail-soft.
     """
-    blank = {"plan": None, "is_plus": False, "has_active_subscription": False, "expires": None}
+    blank = {
+        "plan": None,
+        "is_plus": False,
+        "has_active_subscription": False,
+        "expires": None,
+        "payment_date": None,
+    }
     if not isinstance(data, dict):
         return blank
     accounts = data.get("accounts")
@@ -2090,14 +2099,45 @@ def _parse_entitlement_plan(data: dict[str, Any]) -> dict[str, Any]:
     raw_expires = ent.get("expires_at")
     if isinstance(raw_expires, str) and len(raw_expires) <= 64:
         try:
-            expires = datetime.fromisoformat(raw_expires.replace("Z", "+00:00")).date().isoformat()
+            parsed_expires = datetime.fromisoformat(raw_expires.replace("Z", "+00:00"))
+            # The entitlement timestamp is an instant when it carries an
+            # offset. Convert it to the operator's account timezone before
+            # taking the calendar date; truncating the UTC string first can
+            # show the previous day for late-evening UTC expirations.
+            if parsed_expires.tzinfo is not None:
+                parsed_expires = parsed_expires.astimezone(_ACCOUNT_DATE_TIMEZONE)
+            expires = parsed_expires.date().isoformat()
         except ValueError:
             pass
+    payment_date: str | None = None
+    # Some entitlement responses expose the start of the current billing
+    # period. Prefer that authoritative value when available.
+    for key in ("payment_date", "last_payment_at", "current_period_start", "billing_period_start"):
+        candidate = ent.get(key)
+        if not isinstance(candidate, str) or len(candidate) > 64:
+            continue
+        try:
+            parsed_candidate = datetime.fromisoformat(candidate.replace("Z", "+00:00"))
+            if parsed_candidate.tzinfo is not None:
+                parsed_candidate = parsed_candidate.astimezone(_ACCOUNT_DATE_TIMEZONE)
+            payment_date = parsed_candidate.date().isoformat()
+            break
+        except ValueError:
+            continue
+    # Plus/Pro subscriptions are monthly. When the endpoint only returns the
+    # next renewal (`expires_at`), expose the beginning of that monthly period
+    # as the payment date instead of presenting the renewal date as a payment.
+    if payment_date is None and expires is not None and label in {"plus", "pro"}:
+        expiry = date.fromisoformat(expires)
+        month = expiry.month - 1 or 12
+        year = expiry.year - (1 if expiry.month == 1 else 0)
+        payment_date = date(year, month, min(expiry.day, calendar.monthrange(year, month)[1])).isoformat()
     return {
         "plan": label,
         "is_plus": has_active and label == "plus",
         "has_active_subscription": has_active,
         "expires": expires,
+        "payment_date": payment_date,
     }
 
 

@@ -52,12 +52,15 @@ const htmlSource = fs.readFileSync(path.join(__dirname, '../change 2fa community
 const cssSource = fs.readFileSync(path.join(__dirname, '../change 2fa community/static/dashboard.css'), 'utf8');
 
 assert.match(htmlSource, /<th>Thanh toán<\/th>/);
+assert.match(htmlSource, /id="output-line-numbers" class="line-numbers"/);
 assert.match(htmlSource, /\/assets\/payment-ui\.js\?v=/);
 assert.ok(
   htmlSource.indexOf('/assets/payment-ui.js') < htmlSource.indexOf('/assets/app.js'),
   'payment helper must load before app.js',
 );
 assert.match(appSource, /function paymentCell\(job\)/);
+assert.match(appSource, /output-line-numbers/);
+assert.match(appSource, /function syncOutputScroll\(\)/);
 assert.match(appSource, /PaymentUI\?\.buildPaymentView\(job\.payment_methods, job\.billing_date\)/);
 assert.match(appSource, /class="payment-cell"/);
 assert.match(appSource, /method\.detailLabel\s*\?/);
@@ -67,15 +70,17 @@ assert.doesNotMatch(appSource, /\.join\(' · '\) \|\| method\.typeLabel/);
 assert.match(appSource, /Không có phương thức/);
 assert.match(appSource, /Không đọc được/);
 assert.match(cssSource, /\.payment-card/);
+assert.match(cssSource, /\.output-wrap\{display:grid;grid-template-columns:46px minmax\(0,1fr\)/);
+assert.match(cssSource, /\.workbench-grid\{grid-template-columns:minmax\(0,1fr\) minmax\(0,1fr\)\}/);
 assert.match(cssSource, /\.payment-placeholder/);
 assert.match(
   cssSource,
-  /\.table-wrap th:nth-child\(3\),\.table-wrap td:nth-child\(3\),\.table-wrap th:nth-child\(5\),\.table-wrap td:nth-child\(5\)\{width:1%;white-space:nowrap\}/,
+  /\.table-wrap th:nth-child\(4\),\.table-wrap td:nth-child\(4\),\.table-wrap th:nth-child\(6\),\.table-wrap td:nth-child\(6\)\{width:1%;white-space:nowrap\}/,
   'account-check and payment columns should shrink-wrap their visible content',
 );
 assert.match(
   cssSource,
-  /\.table-wrap th:nth-child\(4\)\{width:auto\}/,
+  /\.table-wrap th:nth-child\(5\)\{width:auto\}/,
   'weekly Usage should absorb the remaining table width',
 );
 assert.match(cssSource, /\.payment-cell\{min-width:0\}/);

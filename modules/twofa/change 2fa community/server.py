@@ -209,9 +209,9 @@ app = FastAPI(
 
 @app.middleware("http")
 async def disable_passkey_ui_cache(request: Request, call_next):
-    """Keep an already-open admin page from reusing stale passkey handlers."""
+    """Keep an already-open admin page from reusing stale dashboard assets."""
     response = await call_next(request)
-    if request.url.path in {"/passkey", "/assets/passkey-ui.js"}:
+    if request.url.path in {"/", "/passkey"} or request.url.path.startswith("/assets/"):
         response.headers["Cache-Control"] = "no-store, max-age=0"
         response.headers["Pragma"] = "no-cache"
     return response

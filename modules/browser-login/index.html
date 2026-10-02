@@ -3533,7 +3533,6 @@
         try {
           const data = await codexWebRequest('start', { accounts, workers });
           codexWebRunId = data.runId;
-          $('codex-web-accounts-input').value = '';
           $('codex-web-results').textContent = 'Đang mở Chrome…';
         } catch (error) {
           showMsg('codex-web-msg', error.message + ' — kiểm tra trạng thái trước khi chạy lại.', 'err');

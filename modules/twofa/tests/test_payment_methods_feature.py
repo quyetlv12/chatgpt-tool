@@ -63,8 +63,17 @@ class PaymentParserTests(unittest.TestCase):
         }
 
         self.assertEqual(_parse_entitlement_plan(payload)["expires"], "2026-09-01")
+        self.assertEqual(_parse_entitlement_plan(payload)["payment_date"], "2026-08-01")
+        payload["accounts"]["default"]["entitlement"]["expires_at"] = "2026-08-31T18:00:00Z"
+        self.assertEqual(
+            _parse_entitlement_plan(payload)["expires"],
+            "2026-09-01",
+            "expiry date must be converted to Vietnam time before truncating the date",
+        )
+        self.assertEqual(_parse_entitlement_plan(payload)["payment_date"], "2026-08-01")
         payload["accounts"]["default"]["entitlement"]["expires_at"] = "not-a-date"
         self.assertIsNone(_parse_entitlement_plan(payload)["expires"])
+        self.assertIsNone(_parse_entitlement_plan(payload)["payment_date"])
 
     def test_parses_safe_card_summary_and_drops_private_fields(self) -> None:
         result = _parse_payment_methods(SAMPLE_PAYMENT_RESPONSE)
@@ -185,7 +194,7 @@ class PaymentServiceTests(unittest.IsolatedAsyncioTestCase):
 
     @staticmethod
     async def _entitlement_fn(**_kwargs):
-        return {"plan": "plus", "is_plus": True, "expires": "2026-09-01"}
+        return {"plan": "plus", "is_plus": True, "expires": "2026-09-01", "payment_date": "2026-08-01"}
 
     @staticmethod
     async def _usage_fn(**_kwargs):
@@ -214,7 +223,7 @@ class PaymentServiceTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(result.payment_methods[0]["last4"], "4242")
-        self.assertEqual(result.billing_date, "2026-09-01")
+        self.assertEqual(result.billing_date, "2026-08-01")
         self.assertEqual(calls[0]["account_id"], "acct-test")
         self.assertEqual(set(result.payment_methods[0]), {
             "type", "brand", "last4", "exp_month", "exp_year", "is_default",

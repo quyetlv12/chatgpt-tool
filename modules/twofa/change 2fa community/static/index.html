@@ -8,7 +8,7 @@
   <title>Shoptaikhoan Tool | Change 2FA</title>
   <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
   <link rel="stylesheet" href="/assets/index.css?v=1.3.0">
-  <link rel="stylesheet" href="/assets/dashboard.css?v=1.5.19">
+  <link rel="stylesheet" href="/assets/dashboard.css?v=1.5.21">
 </head>
 <body>
   <div class="ambient ambient-a"></div><div class="ambient ambient-b"></div>
@@ -88,6 +88,7 @@
           </div>
           <p class="output-note">Chỉ hiển thị tài khoản đã đăng nhập lại thành công bằng 2FA mới.</p>
           <div class="output-wrap">
+            <div id="output-line-numbers" class="line-numbers" aria-hidden="true">1</div>
             <textarea id="success-output" readonly spellcheck="false" aria-label="Tài khoản đã đổi 2FA thành công"></textarea>
             <div id="output-empty" class="output-empty"><span><svg class="ui-icon" aria-hidden="true"><use href="/assets/tabler-icons.svg?v=1.0.1#ti-shield-check"></use></svg></span><strong>Chưa có kết quả</strong><small>Tài khoản hoàn tất sẽ xuất hiện tại đây.</small></div>
           </div>
@@ -105,6 +106,7 @@
             <button id="retry-failed" class="button retry" disabled><svg class="ui-icon" aria-hidden="true"><use href="/assets/tabler-icons.svg?v=1.0.1#ti-refresh"></use></svg><span>Retry lỗi</span><b id="retry-failed-count">0</b></button>
             <button id="export-filtered" class="button export-filtered" disabled title="Xuất dữ liệu của tab đang chọn"><svg class="ui-icon" aria-hidden="true"><use href="/assets/tabler-icons.svg?v=1.0.1#ti-download"></use></svg><span>Xuất tab</span><b id="export-filtered-count">0</b></button>
             <button id="clear-failed" class="button clear-failed" disabled title="Xóa tài khoản lỗi, giữ lại tài khoản Live"><svg class="ui-icon" aria-hidden="true"><use href="/assets/tabler-icons.svg?v=1.0.1#ti-trash-x"></use></svg><span>Dọn lỗi</span><b id="clear-failed-count">0</b></button>
+            <button id="logout-selected" class="button logout-selected" disabled title="Logout all sessions cho các tài khoản Live đã chọn"><svg class="ui-icon" aria-hidden="true"><use href="/assets/tabler-icons.svg?v=1.0.2#ti-logout"></use></svg><span>Logout all sessions</span><b id="logout-selected-count">0</b></button>
             <button id="stop-all" class="button danger"><svg class="ui-icon" aria-hidden="true"><use href="/assets/tabler-icons.svg?v=1.0.1#ti-player-stop"></use></svg><span>Dừng tất cả</span></button>
             <button id="clear-all" class="button ghost"><svg class="ui-icon" aria-hidden="true"><use href="/assets/tabler-icons.svg?v=1.0.1#ti-trash"></use></svg><span>Dọn danh sách</span></button>
           </div>
@@ -119,7 +121,7 @@
           <button id="filter-error" class="filter" data-filter="error"><svg class="ui-icon" aria-hidden="true"><use href="/assets/tabler-icons.svg?v=1.0.1#ti-alert-triangle"></use></svg><span>Lỗi</span><b id="count-error">0</b></button>
         </div>
         <div class="table-wrap">
-          <table><thead><tr><th>Tài khoản · Chế độ</th><th>Trạng thái · Gói</th><th>Kiểm tra tài khoản</th><th>Usage tuần</th><th>Thanh toán</th><th></th></tr></thead><tbody id="job-list"></tbody></table>
+          <table><thead><tr><th class="logout-select-head"><input id="select-all-logout" type="checkbox" aria-label="Chọn tất cả tài khoản Live đủ điều kiện logout"></th><th>Tài khoản · Chế độ</th><th>Trạng thái · Gói</th><th>Kiểm tra tài khoản</th><th>Usage tuần</th><th>Thanh toán</th><th></th></tr></thead><tbody id="job-list"></tbody></table>
           <div id="empty-state" class="empty-state"><span><svg class="ui-icon" aria-hidden="true"><use href="/assets/tabler-icons.svg?v=1.0.1#ti-list-details"></use></svg></span><h3>Danh sách đang trống</h3><p>Nạp combo phía trên để bắt đầu.</p></div>
         </div>
       </section>
@@ -317,7 +319,7 @@
       <div><small>ĐĂNG XUẤT MỌI THIẾT BỊ</small><h2 id="logout-sessions-title">Logout all sessions</h2></div>
     </div>
     <p id="logout-sessions-description">Đăng xuất các phiên của tài khoản này trên mọi thiết bị, bao gồm phiên hiện tại. Có thể mất tối đa 30 phút. Những tool/app khác đang dùng cùng tài khoản có thể bị ngắt phiên; hãy dừng công việc trên tài khoản này trước khi xác nhận.</p>
-    <div id="logout-sessions-email" class="row-change-account delete-chats-account"></div>
+    <div id="logout-sessions-email" class="row-change-account delete-chats-account logout-sessions-account"></div>
     <p>Không đổi mật khẩu, 2FA hay xóa chat/lịch sử trong tool. Không tự đăng nhập lại sau logout. Không áp dụng cho phiên bên thứ ba hoặc Codex CLI.</p>
     <div class="confirm-actions">
       <button id="logout-sessions-cancel" class="button ghost" type="button" autofocus>Quay lại</button>
@@ -384,9 +386,9 @@
 
   <div id="toast-stack" class="toast-stack" aria-live="polite"></div>
   <script src="/assets/usage-ui.js?v=1.3.9" defer></script>
-  <script src="/assets/payment-ui.js?v=1.0.2" defer></script>
+  <script src="/assets/payment-ui.js?v=1.0.4" defer></script>
   <script src="/assets/realtime-ui.js?v=1.0.0" defer></script>
-  <script src="/assets/app.js?v=1.3.35" defer></script>
+  <script src="/assets/app.js?v=1.3.37" defer></script>
   <script src="/assets/password-history-ui.js?v=1.0.0" defer></script>
   <script src="/assets/password-ui.js?v=1.2.2" defer></script>
 </body>

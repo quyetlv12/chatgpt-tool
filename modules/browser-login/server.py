@@ -1055,6 +1055,7 @@ def _auto_login_worker(accounts, headed=True, workers=3):
             errors="replace",
             cwd=SCRIPT_DIR,
             env=env,
+            start_new_session=os.name != "nt",
         )
         with _auto_login_lock:
             _auto_login_proc = proc
@@ -1786,13 +1787,25 @@ def stop_auto_login():
     # This must happen before updating UI state so Stop All means nothing keeps
     # trying to log in or holding an OAuth callback connection in the background.
     if pid:
-        killed = _kill_pid_tree(pid) or killed
+        if os.name == "nt":
+            killed = _kill_pid_tree(pid) or killed
+        else:
+            try:
+                import signal
+                os.killpg(os.getpgid(pid), signal.SIGTERM)
+                killed = True
+            except (OSError, ProcessLookupError):
+                pass
         try:
             if proc:
                 proc.wait(timeout=5)
         except Exception:
             try:
-                proc.kill()
+                if os.name == "nt":
+                    proc.kill()
+                else:
+                    import signal
+                    os.killpg(os.getpgid(pid), signal.SIGKILL)
                 proc.wait(timeout=3)
                 killed = True
             except Exception as error:
@@ -1822,6 +1835,35 @@ def stop_auto_login():
         _auto_login_status["pid"] = None
     print("  [stop] All workers disconnected. process={}, browsers={}".format(killed, killed_browsers))
     return killed or killed_browsers > 0
+
+
+def close_all_tool_browser_windows():
+    """Close browser processes owned by any browser-login workflow.
+
+    The Suite-level control uses this single operation so operators do not
+    need to visit the OAuth, ChatGPT Web, and Codex Web screens separately.
+    It never scans or terminates the operator's normal Chrome windows.
+    """
+    with _auto_login_lock:
+        auto_active = bool(
+            _auto_login_proc
+            or _auto_login_status.get("running")
+        )
+    with _web_login_lock:
+        web_active = bool(
+            _web_login_proc
+            or _web_login_status.get("running")
+            or _web_login_status.get("paused")
+            or _web_login_status.get("webReady")
+            or _web_login_status.get("webSessions")
+        )
+
+    closed = False
+    if auto_active:
+        closed = bool(stop_auto_login()) or closed
+    if web_active:
+        closed = bool(stop_web_login()) or closed
+    return closed
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -1989,6 +2031,10 @@ class Handler(SimpleHTTPRequestHandler):
         if p == "/api/oauth/auto-stop":
             killed = stop_auto_login()
             self._json({"ok": True, "killed": killed})
+            return
+        if p == "/api/browser/windows/close":
+            closed = close_all_tool_browser_windows()
+            self._json({"ok": True, "closed": closed})
             return
         if p in ("/api/web-login/start", "/api/codex-web/start"):
             length = int(self.headers.get("Content-Length", 0))

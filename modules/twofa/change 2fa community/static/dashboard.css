@@ -30,7 +30,7 @@
 .button.clear-failed{display:flex;align-items:center;gap:7px;border-color:rgba(255,163,120,.4);background:rgba(123,66,54,.3);color:#ffc0a4}.button.clear-failed b{min-width:20px;padding:2px 6px;border-radius:10px;background:rgba(255,163,120,.12);color:#ffc0a4;font-size:.64rem}.button.clear-failed:hover:not(:disabled){background:rgba(145,75,59,.46);border-color:#ffad87}
 @media(max-width:680px){.launch-controls{width:100%}.concurrency-control{flex:1}.queue-tools{flex-wrap:wrap}.button.retry{order:-1}.queue-tools .button{font-size:.67rem}}
 
-.account-result{display:flex;flex-direction:column;align-items:flex-start;gap:4px;max-width:220px}.account-result small{display:block;max-width:220px;overflow-wrap:anywhere;color:#92b6c6;font-size:.58rem;line-height:1.35;white-space:normal}.account-badge{display:inline-flex;align-items:center;padding:3px 7px;border:1px solid var(--line);border-radius:8px;font-size:.56rem;font-weight:900;letter-spacing:.04em}.account-badge.live{color:#83f5d0;border-color:rgba(85,237,189,.38);background:rgba(51,185,146,.13)}.account-badge.die{color:#ff9eaa;border-color:rgba(255,113,132,.45);background:rgba(210,54,77,.16)}.account-badge.unknown{color:#acd2e4;background:rgba(72,145,180,.12)}.status.success.plan-plus{color:#72f7c8;background:linear-gradient(110deg,rgba(41,192,146,.22),rgba(45,127,190,.18));border:1px solid rgba(85,237,189,.28)}.status.success.plan-free{color:#9ee6ff;background:rgba(61,167,222,.17);border:1px solid rgba(110,207,255,.24)}.status.error{max-width:220px;white-space:normal;line-height:1.25}.table-wrap th:nth-child(1){width:21%}.table-wrap th:nth-child(2){width:13%}.table-wrap th:nth-child(3),.table-wrap td:nth-child(3),.table-wrap th:nth-child(5),.table-wrap td:nth-child(5){width:1%;white-space:nowrap}.table-wrap th:nth-child(4){width:auto}
+.account-result{display:flex;flex-direction:column;align-items:flex-start;gap:4px;max-width:220px}.account-result small{display:block;max-width:220px;overflow-wrap:anywhere;color:#92b6c6;font-size:.58rem;line-height:1.35;white-space:normal}.account-badge{display:inline-flex;align-items:center;padding:3px 7px;border:1px solid var(--line);border-radius:8px;font-size:.56rem;font-weight:900;letter-spacing:.04em}.account-badge.live{color:#83f5d0;border-color:rgba(85,237,189,.38);background:rgba(51,185,146,.13)}.account-badge.die{color:#ff9eaa;border-color:rgba(255,113,132,.45);background:rgba(210,54,77,.16)}.account-badge.unknown{color:#acd2e4;background:rgba(72,145,180,.12)}.status.success.plan-plus{color:#72f7c8;background:linear-gradient(110deg,rgba(41,192,146,.22),rgba(45,127,190,.18));border:1px solid rgba(85,237,189,.28)}.status.success.plan-free{color:#9ee6ff;background:rgba(61,167,222,.17);border:1px solid rgba(110,207,255,.24)}.status.error{max-width:220px;white-space:normal;line-height:1.25}.table-wrap th:nth-child(1),.table-wrap td:nth-child(1){width:38px;padding-left:8px;padding-right:8px;text-align:center}.table-wrap th:nth-child(2){width:21%}.table-wrap th:nth-child(3),.table-wrap td:nth-child(3){width:13%}.table-wrap th:nth-child(4),.table-wrap td:nth-child(4),.table-wrap th:nth-child(6),.table-wrap td:nth-child(6){width:1%;white-space:nowrap}.table-wrap th:nth-child(5){width:auto}
 
 /* Privacy-safe weekly Usage summary. */
 .usage-cell{min-width:180px}.usage-card{display:grid;gap:4px;max-width:240px;padding:7px 9px;border:1px solid rgba(101,213,255,.2);border-radius:10px;background:rgba(8,35,54,.48)}.usage-line,.usage-meta{display:flex;align-items:center;justify-content:space-between;gap:7px}.usage-line strong{color:#91f4d5;font-size:.68rem;font-variant-numeric:tabular-nums}.usage-line span{color:#a8c8d6;font-size:.55rem;font-weight:700}.usage-track{height:5px;overflow:hidden;border-radius:9px;background:rgba(142,204,231,.18)}.usage-track i{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#45dcb4,#5eeafb);box-shadow:0 0 10px rgba(85,237,189,.35)}.usage-meta small{color:#8eb3c3;font-size:.52rem;line-height:1.25}.usage-badges{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:3px}.usage-credit,.usage-reset-credit{flex:none;padding:2px 5px;border-radius:6px;font-size:.48rem;font-weight:800}.usage-credit{background:rgba(83,213,251,.12);color:#9eeaff}.usage-reset-credit{background:rgba(69,220,180,.13);color:#91f4d5}.usage-card.warning{border-color:rgba(255,194,94,.32)}.usage-card.warning .usage-line strong{color:#ffd27d}.usage-card.warning .usage-track i{background:linear-gradient(90deg,#ffba59,#ffe092)}.usage-card.limited{border-color:rgba(255,118,136,.42);background:rgba(116,34,51,.2)}.usage-card.limited .usage-line strong,.usage-card.limited .usage-meta small{color:#ffabb7}.usage-card.limited .usage-track i{background:linear-gradient(90deg,#ff637d,#ff9cab)}.usage-placeholder{display:flex;flex-direction:column;align-items:flex-start;gap:2px;color:#709caf;font-size:.56rem}.usage-placeholder small{color:#628ca0;font-size:.49rem}.usage-placeholder.loading{flex-direction:row;align-items:center}.usage-placeholder.loading i{width:7px;height:7px;flex:none;border-radius:50%;background:var(--cyan);box-shadow:0 0 9px var(--cyan);animation:usagePulse 1.15s ease-in-out infinite}.usage-placeholder.unavailable span{color:#a7c3d0}.usage-retry{margin-top:4px;padding:3px 7px;border:1px solid rgba(85,231,250,.38);border-radius:7px;background:rgba(22,91,112,.58);color:var(--cyan);font-size:.5rem;font-weight:800;cursor:pointer}.usage-retry:hover{border-color:var(--cyan);color:#fff}.usage-retry:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}@keyframes usagePulse{50%{opacity:.35;transform:scale(.8)}}
@@ -205,7 +205,7 @@ body{
 .line-numbers{background:#0b2a42;color:#6094aa}
 .editor-wrap textarea,#success-output{font-size:.68rem}
 .output-note{margin:8px 0 7px;color:#89adbd;font-size:.61rem}
-.output-wrap{border-color:rgba(82,211,174,.3);background:#08271f}
+.output-wrap{display:grid;grid-template-columns:46px minmax(0,1fr);border-color:rgba(82,211,174,.3);background:#08271f}
 #success-output{color:#bdf4df;font-size:.66rem;line-height:1.55}
 .composer-foot,.output-actions{min-height:38px;margin-top:9px;padding-top:9px;border-top:1px solid rgba(139,207,234,.12)}
 .composer-foot p{max-width:230px;color:#779eaf;font-size:.58rem}
@@ -233,7 +233,7 @@ body{
   .overview-copy{padding:14px 22px}
   .overview-copy h2{margin:0 0 6px;font-size:1.42rem;line-height:1.1}
   .overview-copy p{font-size:.72rem;line-height:1.35}
-  .workbench-grid{grid-template-columns:minmax(0,1.34fr) minmax(360px,.66fr)}
+  .workbench-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
   .queue-section{border-radius:var(--radius)}
   footer{height:30px}
 }
@@ -324,6 +324,12 @@ body{
 .icon-button.logout-sessions{border-color:rgba(255,143,156,.48);background:rgba(139,48,64,.3);color:#ffabb7}
 .icon-button.logout-sessions:disabled{opacity:.48;cursor:not-allowed}
 .icon-button.logout-sessions.is-pending .ui-icon{animation:recheckSpin .8s linear infinite}
+.logout-select-head,.logout-select-cell{text-align:center!important}
+.logout-select-head input,.logout-select-cell input{width:16px;height:16px;margin:0;accent-color:#ff7184;cursor:pointer}
+.logout-select-cell input:disabled,.logout-select-head input:disabled{opacity:.35;cursor:not-allowed}
+.button.logout-selected{display:flex;align-items:center;gap:7px;border-color:rgba(255,143,156,.48);background:rgba(139,48,64,.3);color:#ffabb7}
+.button.logout-selected b{min-width:20px;padding:2px 6px;border-radius:10px;background:rgba(255,143,156,.14);color:#ffb1bb;font-size:.64rem}
+.button.logout-selected:hover:not(:disabled){background:rgba(164,55,75,.46);border-color:#ff8f9c}
 .icon-button.passkey{border-color:rgba(141,177,255,.48);background:rgba(51,87,153,.3);color:#b7d0ff}
 .icon-button.passkey:disabled{opacity:.48;cursor:not-allowed}
 .icon-button.passkey.is-pending .ui-icon{animation:recheckSpin .8s linear infinite}
@@ -340,6 +346,7 @@ body{
 .confirm-accent.is-delete-chats{border-color:rgba(255,143,156,.46);background:linear-gradient(100deg,rgba(151,42,60,.46),transparent)}
 .confirm-accent.is-delete-chats>span{background:rgba(255,107,126,.2);color:#ffacb8}
 .delete-chats-account{border-color:rgba(255,143,156,.34);background:rgba(120,38,54,.2);color:#ffd4da}
+.logout-sessions-account{white-space:pre-line;max-height:180px;overflow:auto}
 .button.confirm-delete-chats{display:flex;align-items:center;justify-content:center;gap:9px;border-color:rgba(255,143,156,.62);background:linear-gradient(110deg,#b33550,#ff7184);color:#fff}
 
 /* Native macOS typography: crisp offline rendering at dense dashboard sizes. */

@@ -213,7 +213,7 @@ class TwoFAService:
             plan = str(payload.get("plan") or "").strip().casefold()
             if not plan:
                 plan = "plus" if payload.get("is_plus") is True else fallback or "free"
-            billing_date = payload.get("expires")
+            billing_date = payload.get("payment_date")
             if not isinstance(billing_date, str):
                 billing_date = None
             log(f"[account] Tài khoản live · gói {plan.upper()}")

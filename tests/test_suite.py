@@ -104,9 +104,31 @@ class HubServerTests(unittest.TestCase):
             with urlopen(f"http://127.0.0.1:{port}/favicon.svg", timeout=2) as response:
                 favicon = response.read().decode("utf-8")
             self.assertIn("Shoptaikhoan Suite", html)
+            self.assertIn('id="close-tool-windows"', html)
+            self.assertIn('nav button[data-module]', (ROOT / "web" / "app.js").read_text())
             self.assertIn('href="/favicon.svg"', html)
             self.assertIn("<svg", favicon)
             self.assertTrue(payload["modules"][0]["ready"])
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+    def test_hub_closes_owned_windows_without_confirmation(self):
+        module = suite.Module("demo", "Demo", "demo.localhost", ROOT / "demo.sock", ROOT, (sys.executable,), {})
+        manager = suite.SuiteManager((module,), probe=lambda _socket: (True, "ok"))
+        manager.close_all_browser_windows = Mock(return_value={"twofa": 2, "browser": True, "closed": 3})
+        server = suite.create_hub_server("127.0.0.1", 0, manager, ROOT / "web")
+        thread = suite.start_server_thread(server)
+        try:
+            request = suite.Request(
+                f"http://127.0.0.1:{server.server_address[1]}/api/windows/close",
+                method="POST",
+            )
+            with urlopen(request, timeout=2) as response:
+                self.assertEqual(response.status, 200)
+                self.assertEqual(json.load(response), {"twofa": 2, "browser": True, "closed": 3})
+            manager.close_all_browser_windows.assert_called_once_with()
         finally:
             server.shutdown()
             server.server_close()

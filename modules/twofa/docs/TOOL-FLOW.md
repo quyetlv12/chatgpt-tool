@@ -55,6 +55,12 @@ The application has two very different browser meanings:
 
 Passing --no-browser suppresses only the automatic local-dashboard launch. It does not change how account login or 2FA rotation works.
 
+The Suite dashboard exposes a single `Đóng tab Chrome` control in its top
+navigation. It closes only Chrome processes owned by the Suite: passkey
+windows from TwoFA, ChatGPT Web/Codex Web windows from Browser Login, and the
+legacy OAuth login worker. It does not scan or close the operator's normal
+Chrome windows and runs without a confirmation dialog.
+
 ## 2. Active runtime versus shared or legacy code
 
 The Community executable starts at change 2fa community/server.py. Its active call graph is:
@@ -280,6 +286,7 @@ app.js owns one in-memory state object:
 - draft-save timer;
 - temporary launch, row-change, recheck, result, and history state.
 - temporary delete-all-chats confirmation state.
+- temporary multi-account logout selection and confirmation state; only successful Live rows can be selected, and the batch uses bounded workers while reusing the single-account logout route.
 
 init() runs:
 
@@ -653,7 +660,7 @@ Plan:
 - session accountPlan or account.planType is fallback;
 - unknown plan does not fail a live account;
 - plan_source records entitlement, session, or none;
-- a valid entitlement `expires_at` is reduced to `YYYY-MM-DD` and displayed as the payment/renewal date; invalid or unavailable values remain null.
+- a valid entitlement `expires_at` is reduced to `YYYY-MM-DD` in the account timezone; for monthly Plus/Pro plans, the payment date is the previous monthly anniversary (`expires_at` is the next renewal), while an explicit current-period start is preferred when the endpoint supplies one. Invalid or unavailable values remain null.
 
 Usage:
 
@@ -680,7 +687,7 @@ Saved payment methods:
 - failure logs only the exception class and returns null, so account verification and 2FA behavior continue;
 - an empty list means the account was read successfully but has no saved payment method, while null means the lookup was unavailable.
 
-payment-ui.js defensively validates the safe summary and billing date again, displays up to two methods plus an additional count, formats the date as `Thanh toán DD/MM/YYYY`, and renders separate loading, empty, unavailable, and not-yet-read states.
+payment-ui.js defensively validates the safe summary and payment date again, displays up to two methods plus an additional count, formats the date as `Thanh toán DD/MM/YYYY`, and renders separate loading, empty, unavailable, and not-yet-read states. When no explicit current-period start is returned, the monthly date is derived from the next renewal date.
 
 Filters are mirrored in frontend and manager export logic:
 
@@ -1030,6 +1037,7 @@ Do not revive signup, browser automation, Outlook, iCloud, payment, or session-e
 24. Logout-all-sessions blocks same-account conflicting work but never changes another account's queue or state.
 25. Passkey preparation requires a verified Live row, is RAM-only and one-use, never stores a private key, and never claims WebAuthn completion.
 26. Bulk passkey jobs are RAM-only, use one handoff per account, never persist credentials or enrollment URLs, and never claim WebAuthn completion.
+27. The dashboard can select multiple successful Live rows for logout. Each selected account reuses the confirmed single-account route exactly once, with bounded client concurrency, no automatic retry, and independent failures.
 
 ## 26. Agent change-impact map
 

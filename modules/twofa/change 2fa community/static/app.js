@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const state = { token: '', jobs: new Map(), filter: 'all', settings: {}, workerHealth: null, connection: 'offline', events: null, eventBatcher: null, output: '', draftTimer: null, pendingLaunch: null, pendingChangeJobId: null, pendingDeleteChatsJobId: null, pendingLogoutJobId: null, pendingPasskeyJobId: null, passkeyPreparing: false, passkeyWindow: null, logoutPending: false, pendingRowChangeResults: new Set(), pendingRechecks: new Set(), activeChangeResultJobId: null, twofaHistory: [], clearAllPending: false };
+  const state = { token: '', jobs: new Map(), filter: 'all', settings: {}, workerHealth: null, connection: 'offline', events: null, eventBatcher: null, output: '', draftTimer: null, pendingLaunch: null, pendingChangeJobId: null, pendingDeleteChatsJobId: null, selectedLogoutJobIds: new Set(), pendingLogoutJobIds: [], pendingPasskeyJobId: null, passkeyPreparing: false, passkeyWindow: null, logoutPending: false, pendingRowChangeResults: new Set(), pendingRechecks: new Set(), activeChangeResultJobId: null, twofaHistory: [], clearAllPending: false };
   const LAUNCH_REQUEST_TIMEOUT_MS = 15000;
   const $ = (id) => document.getElementById(id);
   const icon = (name) => `<svg class="ui-icon" aria-hidden="true" focusable="false"><use href="/assets/tabler-icons.svg?v=1.0.3#ti-${name}"></use></svg>`;
@@ -266,7 +266,39 @@
     return '<div class="payment-placeholder"><span>Chưa có dữ liệu</span></div>';
   }
 
+  function isLogoutEligible(job) {
+    return Boolean(job)
+      && job.status === 'success'
+      && job.account_state === 'live'
+      && !job.chat_deleting
+      && !job.usage_refreshing
+      && !state.pendingRechecks.has(job.id)
+      && !isLoggingOut(job)
+      && !isPasskeyPreparing(job);
+  }
+
+  function pruneLogoutSelection() {
+    state.selectedLogoutJobIds.forEach((id) => {
+      if (!isLogoutEligible(state.jobs.get(id))) state.selectedLogoutJobIds.delete(id);
+    });
+  }
+
+  function renderLogoutSelection(visibleJobs) {
+    const eligibleVisibleJobs = visibleJobs.filter(isLogoutEligible);
+    const selectedVisibleCount = eligibleVisibleJobs.filter((job) => state.selectedLogoutJobIds.has(job.id)).length;
+    const selectAll = $('select-all-logout');
+    selectAll.disabled = state.logoutPending || eligibleVisibleJobs.length === 0;
+    selectAll.checked = eligibleVisibleJobs.length > 0 && selectedVisibleCount === eligibleVisibleJobs.length;
+    selectAll.indeterminate = selectedVisibleCount > 0 && selectedVisibleCount < eligibleVisibleJobs.length;
+
+    const selectedCount = state.selectedLogoutJobIds.size;
+    $('logout-selected-count').textContent = selectedCount;
+    $('logout-selected').disabled = state.logoutPending || selectedCount === 0;
+    $('logout-selected').setAttribute('aria-busy', String(state.logoutPending));
+  }
+
   function render() {
+    if (!state.logoutPending) pruneLogoutSelection();
     counts();
     const clearButton = $('clear-all');
     clearButton.disabled = state.clearAllPending;
@@ -298,7 +330,10 @@
       const loggingOut = isLoggingOut(job);
       const passkeyPreparing = isPasskeyPreparing(job);
       const accountBusy = chatDeleting || loggingOut || passkeyPreparing;
+      const canSelectLogout = isLogoutEligible(job);
+      const logoutSelected = state.selectedLogoutJobIds.has(job.id);
       return `<tr data-id="${job.id}" title="${escapeHtml(job.error || '')}">
+        <td class="logout-select-cell"><input type="checkbox" data-logout-select aria-label="Chọn ${escapeHtml(job.email)} để logout tất cả phiên" ${logoutSelected ? 'checked' : ''} ${canSelectLogout && !state.logoutPending ? '' : 'disabled'}></td>
         <td class="account"><strong>${escapeHtml(job.email)}</strong><span>${job.id.slice(0, 10).toUpperCase()} · <b class="job-mode ${job.mode === 'check_only' ? 'check' : 'change'}">${job.mode === 'check_only' ? 'CHỈ CHECK' : 'ĐỔI 2FA'}</b></span></td>
         <td><span class="status ${job.status} ${job.plan ? `plan-${escapeHtml(job.plan)}` : ''}">${escapeHtml(statusLabel(job))}</span></td>
         <td><div class="account-result"><span class="account-badge ${check.className}">${escapeHtml(check.label)}</span><small>${escapeHtml(checkpoint)}</small></div></td>
@@ -317,6 +352,7 @@
           ${!canStop ? `<button type="button" class="icon-button" data-action="delete" title="Xóa" aria-label="Xóa ${escapeHtml(job.email)}" ${accountBusy ? 'disabled' : ''}>${icon('trash')}</button>` : ''}
         </div></td></tr>`;
     }).join('');
+    renderLogoutSelection(jobs);
   }
 
   function escapeHtml(value) {
@@ -330,11 +366,17 @@
   function renderOutput() {
     const lines = state.output.trim() ? state.output.trim().split(/\r?\n/) : [];
     $('success-output').value = lines.join('\n');
+    $('output-line-numbers').textContent = Array.from({ length: Math.max(1, lines.length) }, (_, i) => i + 1).join('\n');
     $('output-count').textContent = `${lines.length} tài khoản`;
     $('output-empty').style.display = lines.length ? 'none' : 'flex';
     $('success-output').style.visibility = lines.length ? 'visible' : 'hidden';
+    $('output-line-numbers').style.visibility = lines.length ? 'visible' : 'hidden';
     $('copy-output').disabled = !lines.length;
     $('export-output').disabled = !lines.length;
+  }
+
+  function syncOutputScroll() {
+    $('output-line-numbers').scrollTop = $('success-output').scrollTop;
   }
 
   async function refreshOutput() {
@@ -450,6 +492,7 @@
       } else if (action === 'delete') {
         await api(`/api/jobs/${id}`, { method: 'DELETE' });
         state.pendingRechecks.delete(id);
+        state.selectedLogoutJobIds.delete(id);
         state.jobs.delete(id); render();
       }
     } catch (error) { toast(error.message, 'error'); }
@@ -494,13 +537,31 @@
   }
 
   function openLogoutConfirmation(id) {
-    const job = state.jobs.get(id);
-    if (!job || job.status !== 'success' || job.account_state !== 'live'
-      || job.chat_deleting || job.usage_refreshing || isLoggingOut(job)) {
-      throw new Error('Tài khoản chưa đủ điều kiện logout all sessions.');
+    openLogoutConfirmationForIds([id]);
+  }
+
+  function openSelectedLogoutConfirmation() {
+    openLogoutConfirmationForIds([...state.selectedLogoutJobIds]);
+  }
+
+  function openLogoutConfirmationForIds(ids) {
+    const jobs = ids.map((id) => state.jobs.get(id)).filter(isLogoutEligible);
+    if (!jobs.length || jobs.length !== ids.length) {
+      pruneLogoutSelection();
+      render();
+      throw new Error('Tài khoản đã chọn chưa đủ điều kiện logout all sessions.');
     }
-    state.pendingLogoutJobId = id;
-    $('logout-sessions-email').textContent = job.email;
+    state.pendingLogoutJobIds = jobs.map((job) => job.id);
+    const visibleEmails = jobs.slice(0, 8).map((job) => job.email);
+    if (jobs.length > visibleEmails.length) visibleEmails.push(`… và ${jobs.length - visibleEmails.length} tài khoản khác`);
+    $('logout-sessions-title').textContent = jobs.length === 1
+      ? 'Logout all sessions'
+      : `Logout all sessions · ${jobs.length} tài khoản`;
+    $('logout-sessions-description').textContent = jobs.length === 1
+      ? 'Đăng xuất các phiên của tài khoản này trên mọi thiết bị, bao gồm phiên hiện tại. Có thể mất tối đa 30 phút. Những tool/app khác đang dùng cùng tài khoản có thể bị ngắt phiên; hãy dừng công việc trên tài khoản này trước khi xác nhận.'
+      : `Đăng xuất các phiên của ${jobs.length} tài khoản đã chọn trên mọi thiết bị, bao gồm phiên hiện tại. Có thể mất tối đa 30 phút. Những tool/app khác đang dùng các tài khoản này có thể bị ngắt phiên; hãy dừng công việc trước khi xác nhận.`;
+    $('logout-sessions-email').textContent = visibleEmails.join('\n');
+    $('logout-sessions-confirm-action').innerHTML = `${icon('logout')}<span>${jobs.length === 1 ? 'Xác nhận logout tất cả' : `Logout ${jobs.length} tài khoản`}</span>`;
     $('logout-sessions-confirm').showModal();
   }
 
@@ -605,35 +666,67 @@
     }
   }
 
+  async function runWithConcurrency(items, limit, worker) {
+    let nextIndex = 0;
+    const runNext = async () => {
+      while (nextIndex < items.length) {
+        const item = items[nextIndex];
+        nextIndex += 1;
+        await worker(item);
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(limit, items.length) }, runNext));
+  }
+
   async function confirmLogoutSessions() {
-    const id = state.pendingLogoutJobId;
-    const current = state.jobs.get(id);
-    if (!current || state.logoutPending || isLoggingOut(current)) return;
+    if (state.logoutPending) return;
+    const ids = state.pendingLogoutJobIds.filter((id) => isLogoutEligible(state.jobs.get(id)));
+    if (!ids.length) {
+      $('logout-sessions-confirm').close();
+      toast('Không còn tài khoản đủ điều kiện logout.', 'error');
+      return;
+    }
     const button = $('logout-sessions-confirm-action');
     state.logoutPending = true;
-    state.jobs.set(id, { ...current, sessions_logging_out: true });
+    ids.forEach((id) => {
+      state.selectedLogoutJobIds.delete(id);
+      const job = state.jobs.get(id);
+      if (job) state.jobs.set(id, { ...job, sessions_logging_out: true });
+    });
     $('logout-sessions-cancel').disabled = true;
     button.disabled = true;
-    button.innerHTML = `${icon('loader-2')}<span>Đang logout…</span>`;
+    button.innerHTML = `${icon('loader-2')}<span>Đang logout 0/${ids.length}…</span>`;
     render();
-    try {
-      const data = await api(`/api/jobs/${encodeURIComponent(id)}/logout-sessions`, {
-        method: 'POST', body: JSON.stringify({ confirm: 'LOGOUT_ALL_SESSIONS' }),
-      });
-      if (state.jobs.has(id)) state.jobs.set(id, data.job);
-      $('logout-sessions-confirm').close();
-      toast('Đã gửi yêu cầu logout. Các phiên có thể mất tối đa 30 phút để đăng xuất.');
-    } catch (error) {
-      // No automatic retry: a lost response may follow successful revocation.
-      toast(error.message, 'error');
-    } finally {
-      const latest = state.jobs.get(id);
-      if (latest) state.jobs.set(id, { ...latest, sessions_logging_out: false });
-      state.logoutPending = false;
-      button.disabled = false;
-      $('logout-sessions-cancel').disabled = false;
-      button.innerHTML = `${icon('logout')}<span>Xác nhận logout tất cả</span>`;
-      render();
+    let completed = 0;
+    let succeeded = 0;
+    const concurrency = Math.max(1, Math.min(Number(state.settings['twofa.max_concurrent']) || 1, ids.length));
+    await runWithConcurrency(ids, concurrency, async (id) => {
+      try {
+        const data = await api(`/api/jobs/${encodeURIComponent(id)}/logout-sessions`, {
+          method: 'POST', body: JSON.stringify({ confirm: 'LOGOUT_ALL_SESSIONS' }),
+        });
+        if (state.jobs.has(id)) state.jobs.set(id, data.job);
+        succeeded += 1;
+      } catch (_) {
+        // Never retry automatically: a lost response may follow successful revocation.
+      } finally {
+        const latest = state.jobs.get(id);
+        if (latest) state.jobs.set(id, { ...latest, sessions_logging_out: false });
+        completed += 1;
+        button.innerHTML = `${icon('loader-2')}<span>Đang logout ${completed}/${ids.length}…</span>`;
+        render();
+      }
+    });
+
+    state.logoutPending = false;
+    button.disabled = false;
+    $('logout-sessions-cancel').disabled = false;
+    $('logout-sessions-confirm').close();
+    render();
+    if (succeeded === ids.length) {
+      toast(`Đã gửi logout ${succeeded} tài khoản. Các phiên có thể mất tối đa 30 phút để đăng xuất.`);
+    } else {
+      toast(`Đã gửi logout ${succeeded}/${ids.length} tài khoản; ${ids.length - succeeded} tài khoản lỗi. Tool không tự động thử lại.`, 'error');
     }
   }
 
@@ -1101,6 +1194,7 @@
       } else if (payload.type === 'worker_health') state.workerHealth = payload.worker_health;
       else if (payload.type === 'removed') {
         state.jobs.delete(payload.id);
+        state.selectedLogoutJobIds.delete(payload.id);
         state.pendingRowChangeResults.delete(payload.id);
         state.pendingRechecks.delete(payload.id);
         needsRender = true;
@@ -1163,6 +1257,7 @@
   $('combo-input').addEventListener('input', scheduleDraftSave);
   $('combo-input').addEventListener('paste', handleComboPaste);
   $('combo-input').addEventListener('scroll', syncEditorScroll);
+  $('success-output').addEventListener('scroll', syncOutputScroll);
   $('jump-input-top').addEventListener('click', () => {
     $('combo-input').focus({ preventScroll: true });
     scrollEditorToTop(true);
@@ -1222,7 +1317,7 @@
     if (state.logoutPending) event.preventDefault();
   });
   $('logout-sessions-confirm').addEventListener('close', () => {
-    state.pendingLogoutJobId = null;
+    state.pendingLogoutJobIds = [];
     $('logout-sessions-email').textContent = '';
   });
   $('delete-chats-cancel').addEventListener('click', () => {
@@ -1271,6 +1366,25 @@
   $('copy-output').addEventListener('click', copyOutput);
   $('export-output').addEventListener('click', exportOutput);
   $('export-filtered').addEventListener('click', exportFiltered);
+  $('logout-selected').addEventListener('click', () => {
+    try { openSelectedLogoutConfirmation(); } catch (error) { toast(error.message, 'error'); }
+  });
+  $('select-all-logout').addEventListener('change', (event) => {
+    const visibleJobs = filteredJobs();
+    const eligibleIds = visibleJobs.filter(isLogoutEligible).map((job) => job.id);
+    if (event.target.checked) eligibleIds.forEach((id) => state.selectedLogoutJobIds.add(id));
+    else eligibleIds.forEach((id) => state.selectedLogoutJobIds.delete(id));
+    render();
+  });
+  $('job-list').addEventListener('change', (event) => {
+    const checkbox = event.target.closest('[data-logout-select]');
+    const row = event.target.closest('tr');
+    if (!checkbox || !row) return;
+    const id = row.dataset.id;
+    if (checkbox.checked && isLogoutEligible(state.jobs.get(id))) state.selectedLogoutJobIds.add(id);
+    else state.selectedLogoutJobIds.delete(id);
+    render();
+  });
   $('stop-all').addEventListener('click', async () => { try { await api('/api/jobs/stop-all', { method: 'POST' }); toast('Đã gửi lệnh dừng toàn bộ.'); } catch (error) { toast(error.message, 'error'); } });
   async function clearAllJobs() {
     if (state.clearAllPending) return;
@@ -1281,6 +1395,7 @@
     try {
       const data = await api('/api/jobs', { method: 'DELETE', signal: controller.signal });
       state.jobs.clear();
+      state.selectedLogoutJobIds.clear();
       state.pendingRowChangeResults.clear();
       state.pendingRechecks.clear();
       render();

@@ -15,6 +15,10 @@ button span { display: inline-block; width: 7px; height: 7px; margin-left: 7px; 
 button.ready span { background: #24d18b; box-shadow: 0 0 8px #24d18b; }
 button.active span { background: #0a6a4b; box-shadow: none; }
 nav a { margin-left: auto; }
+.close-tool-windows { border-color: rgba(255, 143, 156, .55); color: #ffb2bc; background: rgba(139, 48, 64, .24); }
+.close-tool-windows:hover:not(:disabled) { border-color: #ff8f9c; background: rgba(164, 55, 75, .42); }
+.close-tool-windows:disabled { cursor: wait; opacity: .7; }
+.close-tool-windows span { display: inline-block; margin-right: 4px; font-size: 18px; line-height: 0; vertical-align: -1px; }
 main { position: relative; min-height: 0; }
 iframe { display: block; width: 100%; height: 100%; border: 0; background: #fff; }
 #loading { position: absolute; inset: 0; display: grid; place-items: center; background: #07110f; color: #a8bbb5; z-index: 1; }

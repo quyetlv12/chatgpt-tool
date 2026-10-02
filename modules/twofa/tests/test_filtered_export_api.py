@@ -149,6 +149,14 @@ class FilteredExportApiTests(unittest.TestCase):
         self.assertEqual(response.headers["pragma"], "no-cache")
         self.assertIn("passkey-ui.js?v=1.1.2", response.text)
 
+    def test_dashboard_document_and_assets_are_never_cached(self) -> None:
+        for path in ("/", "/assets/index.css", "/assets/app.js"):
+            with self.subTest(path=path):
+                response = self.client.get(path)
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.headers["cache-control"], "no-store, max-age=0")
+                self.assertEqual(response.headers["pragma"], "no-cache")
+
     def test_passkey_ui_script_is_never_cached(self) -> None:
         response = self.client.get("/assets/passkey-ui.js")
 
