@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import re
 import time
+import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
@@ -3200,6 +3201,54 @@ class ChatGptAccountRepository:
 # ---------------------------------------------------------------------------
 # SettingsRepository — Unified settings store (unified-settings-store spec)
 # ---------------------------------------------------------------------------
+
+
+class LiveJournalRepository:
+    """Immutable snapshots, not recoverable jobs. Credentials stay behind raw()."""
+
+    def __init__(self, engine: "DatabaseEngine") -> None:
+        self._engine = engine
+
+    def create(self, name: str, entries: list[dict]) -> dict:
+        if not entries:
+            raise ValueError("Không có tài khoản Live đã xác minh để lưu.")
+        name = name.strip() or datetime.now().strftime("Nhật ký %d/%m/%Y %H:%M:%S")
+        if len(name) > 100 or any(ord(char) < 32 or ord(char) == 127 for char in name):
+            raise ValueError("Tên nhật ký tối đa 100 ký tự, không chứa ký tự điều khiển.")
+        journal = {"id": str(uuid.uuid4()), "name": name, "created_at": time.time(), "account_count": len(entries)}
+        encoded = json.dumps(entries, ensure_ascii=False, allow_nan=False)
+        # ponytail: one immutable JSON document per journal; split into rows if
+        # very large journals exceed the configured MySQL packet limit.
+        with self._engine.transaction() as conn:
+            conn.execute(
+                "INSERT INTO live_journals(id,name,created_at,account_count,entries_json) VALUES(?,?,?,?,?)",
+                (journal["id"], name, journal["created_at"], len(entries), encoded),
+            )
+        return journal
+
+    def list(self) -> list[dict]:
+        rows = self._engine.raw_connection().execute(
+            "SELECT id,name,created_at,account_count FROM live_journals ORDER BY created_at DESC, id DESC"
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def _get(self, journal_id: str) -> tuple[dict, list[dict]]:
+        row = self._engine.raw_connection().execute("SELECT * FROM live_journals WHERE id=?", (journal_id,)).fetchone()
+        if row is None:
+            raise KeyError(journal_id)
+        metadata = {key: row[key] for key in ("id", "name", "created_at", "account_count")}
+        return metadata, json.loads(row["entries_json"])
+
+    def get(self, journal_id: str) -> dict:
+        metadata, entries = self._get(journal_id)
+        return {"journal": metadata, "jobs": [entry["snapshot"] for entry in entries]}
+
+    def raw(self, journal_id: str, job_id: str) -> str:
+        _metadata, entries = self._get(journal_id)
+        for entry in entries:
+            if entry["snapshot"]["id"] == job_id:
+                return "|".join((entry["email"], entry["password"], entry["secret"]))
+        raise KeyError(job_id)
 
 
 class SettingsRepository:

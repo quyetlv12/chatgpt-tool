@@ -28,3 +28,6 @@ faker>=20
 
 # --- C-bindings (curl_cffi) ---
 cffi>=1.16
+
+# Local MySQL replication (SQLite remains authoritative/offline-capable).
+PyMySQL[rsa]>=1.1,<2

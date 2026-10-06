@@ -1,3 +1,21 @@
+/* Live journal controls reuse the dashboard's native, keyboard-friendly forms. */
+.queue-tools .button[hidden]{display:none}
+.launch-modal.live-journal-modal{width:min(700px,calc(100vw - 28px));max-height:calc(100dvh - 32px);overflow:auto}
+.live-journal-toolbar{display:grid;gap:16px;padding:22px 24px}
+.live-journal-save{display:flex;align-items:flex-end;gap:10px;margin:0}
+.live-journal-toolbar label{display:grid;gap:5px;min-width:0;color:var(--muted);font-size:.65rem;font-weight:700}
+.live-journal-save label{flex:1}
+.live-journal-toolbar input,.live-journal-toolbar select{width:100%;min-width:0;min-height:38px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:#0b253c;color:var(--text);font:inherit}
+.live-journal-toolbar select option{background:#0b253c;color:#f4fbff}
+.live-journal-toolbar input:focus-visible,.live-journal-toolbar select:focus-visible,.live-journal-toolbar button:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+.live-journal-toolbar .button{min-height:38px;white-space:nowrap}
+.live-journal-toolbar [hidden]{display:none}
+.live-journal-toolbar p,.live-journal-view-status{margin:0;color:var(--muted);font-size:.65rem;overflow-wrap:anywhere}
+.live-journal-view-status:not([hidden]){padding:10px 0}
+#queue.compact-queue{display:flex;flex-direction:column;height:auto;min-height:420px}
+#queue.compact-queue>.table-wrap{flex:1;height:auto;min-height:220px}
+@media(max-width:680px){.live-journal-toolbar{padding:18px;gap:14px}.live-journal-save{flex-wrap:wrap}.live-journal-save label{flex-basis:100%}}
+
 /* Bright one-viewport dashboard. */
 :root{--bg:#0b2136;--surface:#16425f;--line:rgba(155,222,255,.3);--line-strong:rgba(89,211,255,.58);--text:#f4fbff;--muted:#b6d1df;--cyan:#55e7fa;--success:#55edbd;--danger:#ff8f9c;--radius:18px;--shadow:0 16px 42px rgba(2,14,25,.24)}
 *{box-sizing:border-box}html{font-size:18px;scroll-behavior:smooth}body{margin:0;min-height:100vh;overflow-x:hidden;background:radial-gradient(circle at 75% 0,rgba(37,144,221,.24),transparent 34%),linear-gradient(145deg,#0d2941,#091d31 54%,#10314a);color:var(--text);font-family:"Inter","Segoe UI",sans-serif;line-height:1.45}.ambient{position:fixed;border-radius:50%;filter:blur(110px);pointer-events:none;opacity:.3}.ambient-a{width:500px;height:500px;background:#218fe7;right:-160px;top:-180px}.ambient-b{width:400px;height:400px;background:#20cedd;left:14%;bottom:-310px}button,input,textarea{font:inherit}.app-shell{display:grid;grid-template-columns:minmax(0,1fr);min-height:100vh}main{width:100%;max-width:none;min-width:0;height:100vh;margin:0;padding:0 32px 14px;display:grid;grid-template-rows:78px 118px minmax(265px,1fr) minmax(225px,.86fr) 32px;gap:12px}.topbar{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line)}.top-actions{display:flex;align-items:center;gap:9px}.top-settings{width:38px;height:38px;display:grid;place-items:center;border:1px solid var(--line);border-radius:11px;background:rgba(20,61,88,.85);color:#c2deeb;font-size:1rem;cursor:pointer;transition:background .2s,border-color .2s,color .2s,transform .2s}.top-settings:hover{border-color:var(--line-strong);background:rgba(30,83,113,.95);color:#fff;transform:translateY(-1px)}.top-settings:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}.brand-copy h1,h1,h2,h3,.metric strong{font-family:"Outfit","Inter",sans-serif}.brand-copy h1{margin:2px 0 0;font-size:1.55rem;line-height:1.05}.brand-copy h1 span{color:var(--cyan)}.brand-copy p{margin:4px 0 0;color:var(--muted);font-size:.77rem}.eyebrow{color:#8dd7f5;font-size:.66rem;font-weight:800;letter-spacing:.13em}.live-pill{height:38px;padding:0 14px;display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:11px;background:rgba(20,61,88,.85);color:#c2deeb;font-size:.7rem;font-weight:800}.live-pill i{width:7px;height:7px;border-radius:50%;background:var(--success);box-shadow:0 0 12px var(--success)}.live-pill b{color:#72c4e5}.glass{border:1px solid var(--line);background:linear-gradient(145deg,rgba(24,68,96,.96),rgba(13,45,69,.94));box-shadow:var(--shadow),inset 0 1px 0 rgba(220,245,255,.06);backdrop-filter:blur(15px)}

@@ -1,7 +1,7 @@
 """Schema definitions — DDL strings và version management cho SQLite persistence layer."""
 
 # Schema version hiện tại. Tăng khi có thay đổi DDL.
-CURRENT_VERSION = 15
+CURRENT_VERSION = 17
 
 # --- DDL: Schema version tracking ---
 
@@ -298,6 +298,32 @@ CREATE INDEX IF NOT EXISTS idx_password_history_changed_at
     ON password_history(changed_at, id);
 """
 
+# v16: durable sync markers; credential data stays in the existing tables.
+DDL_TWOFA_SYNC = """\
+CREATE TABLE IF NOT EXISTS twofa_sync_meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS twofa_sync_outbox (
+    revision INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity TEXT NOT NULL,
+    record_key TEXT NOT NULL,
+    UNIQUE(entity, record_key)
+);
+"""
+
+# v17: immutable Live-list snapshots, independent from job cleanup/recovery.
+DDL_LIVE_JOURNALS = """\
+CREATE TABLE IF NOT EXISTS live_journals (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    account_count INTEGER NOT NULL CHECK(account_count > 0),
+    entries_json TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_live_journals_created_at ON live_journals(created_at);
+"""
+
 # --- Ordered list tất cả DDL statements cho migration ---
 
 ALL_DDL: list[str] = [
@@ -333,6 +359,8 @@ ALL_DDL: list[str] = [
     # --- v15: isolated verified password-change history ---
     DDL_PASSWORD_HISTORY,
     DDL_PASSWORD_HISTORY_INDEXES,
+    DDL_TWOFA_SYNC,
+    DDL_LIVE_JOURNALS,
 ]
 """Danh sách DDL theo thứ tự thực thi. Engine sẽ chạy lần lượt trong 1 transaction."""
 
@@ -341,6 +369,9 @@ ALL_DDL: list[str] = [
 # existing tables, nhưng ALTER TABLE ADD COLUMN cần chạy riêng.
 
 MIGRATIONS: dict[int, list[str]] = {
+    17: [statement.strip() + ";" for statement in DDL_LIVE_JOURNALS.split(";") if statement.strip()],
+    # Additive only. Backfill/trigger installation is separate and opt-in.
+    16: [statement.strip() + ";" for statement in DDL_TWOFA_SYNC.split(";") if statement.strip()],
     2: [
         "ALTER TABLE jobs ADD COLUMN session_data TEXT;",
     ],

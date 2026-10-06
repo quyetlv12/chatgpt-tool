@@ -13,3 +13,4 @@ orjson>=3.10
 PyYAML>=6
 faker>=20
 playwright>=1.55,<2
+PyMySQL[rsa]>=1.1,<2

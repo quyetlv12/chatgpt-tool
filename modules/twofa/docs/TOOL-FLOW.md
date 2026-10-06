@@ -1,6 +1,6 @@
 # Shoptaikhoan Tool — Complete Application Flow
 
-Last code trace: 2026-09-27
+Last code trace: 2026-10-06
 
 Scope: Community Source v1.0.0, the FastAPI localhost application, its vanilla JavaScript dashboard, SQLite state, pure-request account operations, launchers, and macOS packaging.
 
@@ -219,7 +219,7 @@ DatabaseEngine uses:
 - one shared writer connection protected by a reentrant lock;
 - BEGIN IMMEDIATE by default for writes;
 - thread-local read connections for concurrent reads;
-- automatic schema migration to CURRENT_VERSION 15.
+- automatic schema migration to CURRENT_VERSION 17.
 
 A fresh database runs the latest ALL_DDL. An existing database runs incremental MIGRATIONS in order. Migration temporarily disables foreign-key checks, executes within one immediate transaction, writes _schema_version, then restores foreign keys. Failure rolls back and raises SchemaError.
 
@@ -232,7 +232,10 @@ Tables used directly by this Community runtime:
 | settings | Local auth token, worker settings, mode switch, and input draft |
 | twofa_history | One independent, append-only row per verified rotation |
 | password_history | One independent row per password change verified by fresh login |
+| live_journals | Immutable manually saved verified Live lists, metadata and credential-bearing entries JSON; independent of jobs |
 | icloud_audit_log | Shared SettingsRepository audit side effect only; sensitive setting values are redacted |
+| twofa_sync_meta | Local replica identity, backfill marker, destination and last acknowledgement |
+| twofa_sync_outbox | Durable record keys and monotonic revisions awaiting MySQL commit; no duplicate credentials |
 
 The other schema tables belong to shared or legacy variants.
 
@@ -273,6 +276,72 @@ SettingsRepository validates key name, whitelist, type, and range. Writes are JS
 password_change.target_password is limited to 12..128 characters, rejects `|`
 and control characters, and is always audited as `***`.
 
+### 6.1 Local MySQL/MAMP replica
+
+`db/mysql_sync.py` adds an opt-in, one-way SQLite → MySQL replica. SQLite remains
+the sole operational store: neither job execution nor credential checkpointing
+waits for MySQL. The private runtime file `mysql-sync.json` configures a loopback
+host/port, database, username, password and optional `enabled=false`. The explicit
+MAMP setup command reads the installed MAMP configuration without echoing its
+credentials, defaults to database `shoptktoool`, and creates this file with mode
+0600; it never overwrites an existing connection configuration.
+
+The replica contains Community 2FA/password jobs, verified 2FA/password history, Live journals,
+`twofa.*` settings (including the input draft), and the common password target.
+It excludes legacy variants, job logs/audits, local control tokens, session data,
+cookies, ephemeral passkey jobs and enrollment URLs. Account passwords/TOTP
+secrets and credential-bearing drafts are plaintext, just as in SQLite; access
+to the MySQL database and local configuration must therefore be restricted.
+
+Schema v16 adds only metadata/outbox tables; v17 adds `live_journals`.
+`MySQLSync.prepare()` separately installs allowlisted SQLite triggers and queues
+preexisting records once per entity. Its initialized marker records entity names;
+the old numeric marker is reseeded idempotently, and new entities are backfilled
+without changing the source identity. Every
+subsequent insert/update/delete marks its key in the same SQLite transaction.
+An offline change cannot be lost between its account commit and queue insertion.
+Rolled-back changes leave no marker; clearing a queue does not clear history.
+
+A daemon thread runs while the tool is open. It reads at most 100 latest records
+under a short SQLite transaction, releases the SQLite lock, and commits them to
+MySQL. Connection/read/write timeouts are bounded. After a successful remote
+commit, only the exact sent revisions are acknowledged locally, retaining any
+newer writes made during upload. Connection failures and lost acknowledgements
+keep the durable queue; retries occur every five seconds (backlogs drain in
+bounded batches). Restarting the tool resumes this queue. Closing the tool leaves
+pending changes in SQLite until the next launch; it does not install a separate
+system service or replay account actions.
+
+MySQL uses additive schema `tool_twofa_records`, identified by
+`(source_id, entity, record_key)`, with JSON `payload`, monotonic `revision` and
+`deleted` tombstones. Idempotent upserts never replace a newer revision with an
+older one. Each SQLite database retains its own source UUID, so another
+installation's rows are untouched. Consumers select `deleted=0`; deletion
+tombstones intentionally remain to prevent stale uploads from resurrecting rows.
+Changing the configured destination requeues current records without erasing the
+previous destination. Restoring an old SQLite backup as a new authoritative
+source requires a new source identity; bidirectional merge/restore is not part
+of this feature.
+
+MAMP is the local MySQL server, not an automatic forwarding service. A remote
+database needs a separately configured local SSH tunnel; this implementation
+rejects non-loopback MySQL hosts and does not reuse old VPS credentials.
+
+From the module directory, use the repository Python environment:
+
+~~~bash
+../../.venv/bin/python -m db.mysql_sync --runtime '<runtime-directory>' --configure-mamp
+~~~
+
+This one-shot import backs up an existing SQLite database before migration,
+does not construct account workers, and outputs only state, pending count and
+exception class. Normal app startup/shutdown starts/stops the background sync.
+`GET /api/database-sync` requires the local token and returns privacy-safe status
+with no-store/nosniff headers. It exposes no DB credentials or account payloads.
+To disable replication, set `enabled=false` in the private configuration; all
+original SQLite data and pending markers remain. Rollback to the previous app
+can retain the additive v16 tables/triggers without discarding account data.
+
 ## 7. Dashboard bootstrap and client state
 
 app.js owns one in-memory state object:
@@ -287,6 +356,7 @@ app.js owns one in-memory state object:
 - temporary launch, row-change, recheck, result, and history state.
 - temporary delete-all-chats confirmation state.
 - temporary multi-account logout selection and confirmation state; only successful Live rows can be selected, and the batch uses bounded workers while reusing the single-account logout route.
+- journal metadata, selected readonly journal, loading/saving flags, and request generation; archived rows never enter the operational jobs Map.
 
 init() runs:
 
@@ -296,6 +366,61 @@ init() runs:
 4. Load settings controls and render editor, connection, queue, counters, and empty output.
 5. If the document is visible, connect EventSource to /api/events?token=....
 6. Fetch /api/output.
+7. Fetch protected Live journal metadata; a failure here does not fail bootstrap.
+
+The main queue's Retry and Clear errors buttons are hidden until their existing
+eligible counts are nonzero. Logout all sessions is hidden until at least one
+eligible Live account is selected; it remains visible but disabled while the
+batch runs. All three actions are hidden in the readonly journal view.
+Stop all is hidden and disabled unless the operational queue contains queued or
+running jobs, independent of the selected table filter; it is also hidden in
+the journal view. Clear list is hidden unless the operational list is nonempty,
+every job is terminal and no Usage refresh, chat deletion, logout, passkey
+preparation, recheck or row change is pending. It remains visible but disabled
+through cleanup, then hides when the list is empty; archives always hide it.
+These checks are independent of the selected table filter. The export button and operational eligibility/confirmation
+rules are unchanged.
+
+### 7.1 Manually saved Live journals
+
+The main queue toolbar has a single `Nhật ký` button. It opens a native dialog
+containing `Tên nhật ký mới`, `Lưu nhật ký`, `Xem nhật ký đã lưu` and the return
+action. The dialog contains keyboard focus, closes with its close button or Esc,
+and returns focus to its trigger. Successful save/selection/return closes the
+dialog; failed saves keep the entered name for retry. Reopening refreshes journal
+metadata. The main table keeps a historical-view notice outside the dialog, so
+closing the modal never makes archived rows look like current verification.
+Blank names get a timestamp-based default. Save captures all current successful,
+Live, login-verified 2FA rows with no pending rotation verification, independent
+of the current filter. The event-loop capture deep-copies safe snapshots and the
+matching credentials before off-thread SQLite insertion. Logs are omitted and
+ephemeral action flags are reset in the copy, never in the current jobs.
+
+`LiveJournalRepository` stores one immutable JSON document per journal in a
+single transaction, with no foreign key to jobs. Clearing current jobs or
+restarting the app cannot erase it. Schema v17 is additive; account operations,
+verified-history completion, and worker recovery are unchanged. Extremely large
+journals may exceed MySQL's packet limit; failed uploads remain in the outbox.
+
+Selecting a journal resets the table filter to all and displays saved rows
+readonly, labeled `LIVE TẠI THỜI ĐIỂM LƯU` and explicitly not reverified. During
+loading, the table is empty and actions are disabled. Only historical Copy raw
+is available; recheck, 2FA, Usage refresh, logout, chat deletion, passkey, logs,
+delete, stop, clear, and operational export controls are unavailable in this
+view. This is display, not queue restoration or credential promotion. Current
+workers and SSE continue to update only `state.jobs`; returning to
+`Danh sách hiện tại` reveals that latest real queue. Explicitly launching new
+work leaves the journal view and uses the ordinary confirmation flow.
+Request generations ignore late journal replies after leaving or selecting a
+different journal.
+
+Journal list/save replies return metadata only; detail returns privacy-safe
+snapshots. The separate historical raw route returns the saved credentials,
+not current credentials. All journal routes require the local token and use
+no-store/nosniff headers. Credentials are SQLite plaintext, consistent with the
+existing histories, and the journal is included in the optional MySQL replica.
+No account action, remote authentication, journal deletion, or automatic save
+is performed by this feature.
 
 password-ui.js owns a second state object, EventSource, queue, output, and
 history. Its normal status refresh receives only the password setting's
@@ -334,6 +459,11 @@ Routes protected by X-Auth-Token:
 | GET /api/jobs/export?view=... | export_filtered(view) | Credential-bearing text download |
 | GET /api/jobs/{id}/raw | raw_combo(id) | One credential-bearing combo |
 | GET /api/twofa-history | twofa_history() | Credential-bearing verified history |
+| GET /api/database-sync | MySQLSync.status() | Safe state, pending count, last success time and exception class; no credentials |
+| POST /api/live-journals | LiveJournalRepository.create(manager.live_journal_entries()) | Save all verified current Live rows; metadata only; 422 if none or invalid name, safe 503 if storage fails |
+| GET /api/live-journals | LiveJournalRepository.list() | Newest-first metadata only |
+| GET /api/live-journals/{journal_id} | LiveJournalRepository.get() | Saved safe snapshots, never enqueued jobs |
+| GET /api/live-journals/{journal_id}/accounts/{job_id}/raw | LiveJournalRepository.raw() | Historical credentials at save time; token + no-store/nosniff; 404 if absent |
 | POST /api/jobs/{id}/change-2fa | enqueue_change_2fa(id) | Eligible row queued for mutation |
 | POST /api/jobs/{id}/retry | retry(id) | Retryable terminal row queued |
 | POST /api/jobs/{id}/recheck | recheck(id) | Successful row queued as check_only |
@@ -875,7 +1005,7 @@ Snapshots and SSE contain no password or TOTP secret.
 
 ## 20. Output, raw data, filtered export, and history
 
-There are six credential-bearing views with different semantics:
+There are seven credential-bearing views with different semantics:
 
 | View | Eligibility and lifetime |
 |---|---|
@@ -885,6 +1015,7 @@ There are six credential-bearing views with different semantics:
 | 2FA history | Verified rotations only; survives queue deletion |
 | Password output | Password jobs where status success + login_verified true |
 | Password history | Verified password changes only; survives password queue deletion |
+| Live journal raw row | Credentials captured at manual save time; survives clearing jobs; not current credential verification |
 
 All use the re-importable form email|password|CURRENT_SECRET.
 
@@ -934,7 +1065,7 @@ Current protections:
 
 Limits of those protections:
 
-- jobs, settings draft, target password, twofa_history, and password_history store credentials as SQLite text;
+- jobs, settings draft, target password, twofa_history, password_history, and live_journals store credentials as SQLite text;
 - a log message containing an older secret after job.secret changes would not be removed by the current-secret replacement;
 - bootstrap exposes the control token to any caller that can reach the loopback endpoint;
 - the SSE query token can appear in local URL/request diagnostics;
@@ -1038,6 +1169,7 @@ Do not revive signup, browser automation, Outlook, iCloud, payment, or session-e
 25. Passkey preparation requires a verified Live row, is RAM-only and one-use, never stores a private key, and never claims WebAuthn completion.
 26. Bulk passkey jobs are RAM-only, use one handoff per account, never persist credentials or enrollment URLs, and never claim WebAuthn completion.
 27. The dashboard can select multiple successful Live rows for logout. Each selected account reuses the confirmed single-account route exactly once, with bounded client concurrency, no automatic retry, and independent failures.
+28. Live journals are immutable historical observations, not recoverable jobs. Selection never replaces the operational queue, promotes credentials, or authenticates; queue clearing never deletes journals.
 
 ## 26. Agent change-impact map
 
@@ -1056,6 +1188,7 @@ Do not revive signup, browser automation, Outlook, iCloud, payment, or session-e
 | Plan, Usage, saved payment methods, or inspection switches | jobs.py, service.py, server.py, session_phase.py, app.js, usage-ui.js, payment-ui.js | test_inspection_options.py, test_usage_feature.py, test_usage_refresh.py, test_payment_methods_feature.py, test_inspection_options_ui.js, test_usage_ui.js, test_payment_ui.js |
 | SQLite schema or transactions | engine.py, schema.py, active repository methods | all Python tests and migration scenario |
 | Output, raw, filter, history | jobs.py, server.py, app.js | filtered export and history tests |
+| Saved Live journals | jobs.py.live_journal_entries, LiveJournalRepository, schema.py, mysql_sync.py, server.py, app.js | test_live_journals.py, test_live_journals_ui.js; opt-in test_live_journals_browser.py |
 | Realtime rendering | jobs.py subscribe/broadcast, server events, realtime-ui.js, app.js | test_realtime_ui.js |
 | macOS bundle | build-macos.sh, spec, macos_integration.py, MenuBarApp.swift | macOS tests and frozen dependency check |
 | UI layout only | index.html, dashboard.css, app.js render functions | JavaScript syntax, Node tests, browser viewport inspection |
@@ -1085,6 +1218,10 @@ password feature tests.
 | tests/test_macos_integration.py | Menu helper command and launch conditions |
 | tests/test_password_feature.py | Settings secrecy, HTTP contract, mutation checkpoint, ambiguity recovery, atomic promotion, separate API |
 | tests/test_twofa_history.py | Atomic verified history, ordering, backfill, queue independence |
+| tests/test_mysql_sync.py | Offline/restart recovery, lost acknowledgement, racing updates/deletes, history independence, migration, privacy; optional live loopback MySQL test |
+| tests/test_live_journals.py | Verified Live capture, deep copy, persistence after clear/restart, additive v17 migration, auth/headers/privacy, no requeue, offline replication |
+| tests/test_live_journals_ui.js | Readonly actions, historical copy, SSE independence, late-response races, safe title rendering and save/metadata failure distinction |
+| tests/test_live_journals_browser.py | Opt-in intercepted-localhost browser fixture: save/clear/reopen/return, real DOM, desktop/tablet/mobile toolbar bounds; no account workers |
 | tests/test_usage_feature.py | Usage parser, service fail-soft behavior, persistence |
 | tests/test_usage_refresh.py | Eligibility, non-mutation, persistence, safe errors |
 | tests/test_delete_all_chats.py | HTTP contract, confirmation/auth, RAM-only lock, non-interference, safe errors |
@@ -1111,6 +1248,7 @@ node tests/test_inspection_options_ui.js
 node tests/test_realtime_ui.js
 node tests/test_password_ui.js
 node tests/test_password_history_ui.js
+node tests/test_live_journals_ui.js
 .venv/bin/python 'change 2fa community/server.py' --check-runtime-dependencies
 .venv/bin/python -m compileall -q \
   'change 2fa community' session_phase.py request_phase.py password_phase.py mfa_phase.py db

@@ -95,6 +95,8 @@ if str(APP_DIR) not in sys.path:
     sys.path.insert(0, str(APP_DIR))
 
 from db import get_engine, get_repos, get_settings_repo  # noqa: E402
+from db.mysql_sync import MySQLSync  # noqa: E402
+from db.repositories import LiveJournalRepository  # noqa: E402
 from jobs import TwoFAJobManager  # noqa: E402
 from macos_integration import launch_menu_bar, menu_bar_command  # noqa: E402
 from passkey_jobs import PasskeyJobManager  # noqa: E402
@@ -113,6 +115,10 @@ _migrate_legacy_database()
 class BatchRequest(BaseModel):
     lines: list[str] = Field(min_length=1, max_length=500)
     mode: str = Field(pattern="^(check_only|change_2fa)$")
+
+
+class LiveJournalRequest(BaseModel):
+    name: str = Field(default="", max_length=100)
 
 
 class SettingsRequest(BaseModel):
@@ -174,6 +180,8 @@ EXPORT_FILENAMES: dict[str, str] = {
 engine = get_engine(str(DB_PATH))
 _, job_repo, _ = get_repos(engine)
 settings_repo = get_settings_repo(engine)
+live_journals = LiveJournalRepository(engine)
+database_sync = MySQLSync(engine, RUNTIME_DIR / "mysql-sync.json")
 auth_token = settings_repo.get("web.auth_token")
 if not isinstance(auth_token, str) or len(auth_token) < 32:
     auth_token = secrets.token_urlsafe(32)
@@ -189,14 +197,20 @@ passkey_handoffs = PasskeyHandoffs()
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    manager.start()
-    password_manager.start()
-    passkey_manager.start()
-    yield
-    await passkey_manager.shutdown()
-    await password_manager.shutdown()
-    await manager.shutdown()
-    engine.close()
+    await asyncio.to_thread(database_sync.start)
+    try:
+        manager.start()
+        password_manager.start()
+        passkey_manager.start()
+        yield
+    finally:
+        try:
+            await passkey_manager.shutdown()
+            await password_manager.shutdown()
+            await manager.shutdown()
+        finally:
+            await asyncio.to_thread(database_sync.stop)
+            engine.close()
 
 
 app = FastAPI(
@@ -254,6 +268,50 @@ async def health() -> dict[str, Any]:
         "password_worker_health": password_manager.worker_health(),
         "passkey_worker_health": passkey_manager.worker_health(),
     }
+
+
+@app.get("/api/database-sync", dependencies=[Depends(require_token)])
+async def database_sync_status() -> JSONResponse:
+    return JSONResponse(
+        await asyncio.to_thread(database_sync.status),
+        headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
+    )
+
+
+@app.post("/api/live-journals", dependencies=[Depends(require_token)])
+async def save_live_journal(request: LiveJournalRequest) -> JSONResponse:
+    entries = manager.live_journal_entries()
+    try:
+        journal = await asyncio.to_thread(live_journals.create, request.name, entries)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Chưa lưu được nhật ký vào SQLite. Danh sách hiện tại vẫn được giữ.") from exc
+    return JSONResponse({"journal": journal}, headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
+
+
+@app.get("/api/live-journals", dependencies=[Depends(require_token)])
+async def list_live_journals() -> JSONResponse:
+    return JSONResponse({"journals": await asyncio.to_thread(live_journals.list)},
+                        headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
+
+
+@app.get("/api/live-journals/{journal_id}", dependencies=[Depends(require_token)])
+async def view_live_journal(journal_id: str) -> JSONResponse:
+    try:
+        data = await asyncio.to_thread(live_journals.get, journal_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Không tìm thấy nhật ký") from exc
+    return JSONResponse(data, headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
+
+
+@app.get("/api/live-journals/{journal_id}/accounts/{job_id}/raw", dependencies=[Depends(require_token)])
+async def raw_live_journal_account(journal_id: str, job_id: str) -> PlainTextResponse:
+    try:
+        raw = await asyncio.to_thread(live_journals.raw, journal_id, job_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Không tìm thấy tài khoản trong nhật ký") from exc
+    return PlainTextResponse(raw, headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
 
 
 @app.post("/api/jobs", dependencies=[Depends(require_token)])
@@ -910,6 +968,7 @@ def main() -> None:
     parser.add_argument("--check-runtime-dependencies", action="store_true")
     args = parser.parse_args()
     if args.check_runtime_dependencies:
+        from cryptography.hazmat.primitives import serialization
         import request_phase
         import sentinel_pow
         import sentinel_quickjs
@@ -919,6 +978,7 @@ def main() -> None:
             request_phase._get_sentinel_token,
             sentinel_pow.get_sentinel_token,
             sentinel_quickjs.get_sentinel_token_via_quickjs,
+            serialization.load_pem_public_key,
         )
         if not all(callable(item) for item in required):
             raise RuntimeError("Pure-request login dependency contract is incomplete")

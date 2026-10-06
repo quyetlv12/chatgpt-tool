@@ -56,7 +56,7 @@ class WebReloadTests(unittest.TestCase):
                 auto_login.main()
             self.assertEqual(run.call_args.kwargs['reload_after'], delay)
 
-    def test_reload_once_without_focus_or_close_and_failure_keeps_session(self):
+    def test_optional_reload_keeps_tabs_and_returns_from_secondary_before_checking(self):
         for delay, link, failure, cancelled in (
             (None, '', False, False), (None, 'https://example.com/', False, False),
             (10, '', False, False), (37, 'https://example.com/', False, False),
@@ -66,7 +66,7 @@ class WebReloadTests(unittest.TestCase):
                 playwright = mock.Mock()
                 browser = playwright.chromium.launch.return_value
                 context = browser.new_context.return_value
-                page, extra = mock.Mock(), mock.Mock()
+                page, extra = mock.Mock(name="main_page"), mock.Mock(name="secondary_page")
                 page.reload.side_effect = TimeoutError('synthetic timeout') if failure else None
                 context.new_page.side_effect = [page, extra]
                 with (
@@ -74,29 +74,134 @@ class WebReloadTests(unittest.TestCase):
                     mock.patch.object(auto_login, 'calculate_window_bounds', return_value={'left': 0, 'top': 0, 'width': 1100, 'height': 800}),
                     mock.patch.object(auto_login, 'apply_browser_window_bounds', return_value=False),
                     mock.patch.object(auto_login, 'login_chatgpt_web', return_value=(True, '')),
-                    mock.patch.object(auto_login, 'verify_personal_account_label', return_value=True),
+                    mock.patch.object(auto_login, 'verify_personal_account_label', return_value=True) as verify,
                     mock.patch.object(auto_login, '_session_shutdown_event') as shutdown,
                     mock.patch.object(auto_login, '_kept_browser_sessions', {}),
                     mock.patch('sys.stdout', new_callable=io.StringIO),
                 ):
                     start.return_value.start.return_value = playwright
                     shutdown.wait.return_value = cancelled
+                    shutdown.is_set.return_value = False
                     result = auto_login.login_web_one_account(1, 1, ('demo@example.test', 'synthetic', ''),
                                                               open_link=link, reload_after=delay)
                 self.assertEqual(result['status'], 'success')
                 self.assertEqual(page.reload.call_count, int(delay is not None and not cancelled))
                 self.assertEqual(result['chatgptReloaded'], delay is not None and not failure and not cancelled)
+                self.assertEqual(verify.call_count, int(not failure and not cancelled))
                 if delay is None:
                     shutdown.wait.assert_not_called()
                 else:
                     shutdown.wait.assert_called_once_with(delay)
                 for tab in (page, extra):
-                    tab.bring_to_front.assert_not_called()
                     tab.close.assert_not_called()
+                if link:
+                    page.bring_to_front.assert_called_once_with()
+                else:
+                    page.bring_to_front.assert_not_called()
                 extra.reload.assert_not_called()
+                extra.bring_to_front.assert_not_called()
                 context.close.assert_not_called()
                 browser.close.assert_not_called()
                 playwright.stop.assert_not_called()
+
+    def test_post_login_flow_orders_secondary_load_main_focus_reload_and_personal_check(self):
+        playwright = mock.Mock()
+        browser = playwright.chromium.launch.return_value
+        context = browser.new_context.return_value
+        page, extra = mock.Mock(name="main_page"), mock.Mock(name="secondary_page")
+        context.new_page.side_effect = [page, extra]
+        phases = []
+        calls = mock.Mock()
+
+        def record_phase(_email, _index, stage, _message):
+            phases.append(stage)
+
+        with (
+            mock.patch.object(auto_login, 'sync_playwright') as start,
+            mock.patch.object(auto_login, 'calculate_window_bounds', return_value={'left': 0, 'top': 0, 'width': 1100, 'height': 800}),
+            mock.patch.object(auto_login, 'apply_browser_window_bounds', return_value=False),
+            mock.patch.object(auto_login, 'login_chatgpt_web', return_value=(True, None)) as login,
+            mock.patch.object(auto_login, 'emit_web_phase', side_effect=record_phase),
+            mock.patch.object(auto_login, 'verify_personal_account_label', return_value=True) as verify,
+            mock.patch.object(auto_login, '_session_shutdown_event') as shutdown,
+            mock.patch.object(auto_login, '_kept_browser_sessions', {}),
+            mock.patch('sys.stdout', new_callable=io.StringIO),
+        ):
+            start.return_value.start.return_value = playwright
+            shutdown.wait.return_value = False
+            shutdown.is_set.return_value = False
+            for name, action in (
+                ('login', login), ('secondary_load', extra.goto),
+                ('main_focus', page.bring_to_front), ('delay', shutdown.wait),
+                ('main_reload', page.reload), ('personal_check', verify),
+            ):
+                calls.attach_mock(action, name)
+            result = auto_login.login_web_one_account(
+                1,
+                1,
+                ('demo@example.test', 'synthetic', ''),
+                open_link='https://example.test/secondary',
+                reload_after=3,
+            )
+
+        self.assertEqual(result['status'], 'success')
+        self.assertTrue(result['linkOpened'])
+        self.assertTrue(result['chatgptReloaded'])
+        verify.assert_called_once_with(page)
+        self.assertLess(phases.index('open_link'), phases.index('link_ready'))
+        self.assertLess(phases.index('link_ready'), phases.index('main_tab_ready'))
+        self.assertLess(phases.index('main_tab_ready'), phases.index('reload_wait'))
+        self.assertLess(phases.index('reload_wait'), phases.index('reloaded'))
+        self.assertLess(phases.index('reloaded'), phases.index('personal_account_check'))
+        extra.goto.assert_called_once_with('https://example.test/secondary', wait_until='load', timeout=45000)
+        page.bring_to_front.assert_called_once_with()
+        page.reload.assert_called_once_with(wait_until='load', timeout=45000)
+        self.assertEqual([call[0] for call in calls.mock_calls], [
+            'login', 'secondary_load', 'main_focus', 'delay', 'main_reload', 'personal_check',
+        ])
+
+    def test_failed_post_login_step_skips_dependencies_but_retains_session(self):
+        for failed_step, expected in (
+            ('secondary_load', 'link_error'), ('main_focus', 'main_tab_error'),
+            ('main_reload', 'reload_error'),
+        ):
+            with self.subTest(failed_step=failed_step):
+                pw = mock.Mock()
+                browser = pw.chromium.launch.return_value
+                context = browser.new_context.return_value
+                page, extra = mock.Mock(), mock.Mock()
+                context.new_page.side_effect = [page, extra]
+                {'secondary_load': extra.goto, 'main_focus': page.bring_to_front,
+                 'main_reload': page.reload}[failed_step].side_effect = TimeoutError('synthetic')
+                with (
+                    mock.patch.object(auto_login, 'sync_playwright') as start,
+                    mock.patch.object(auto_login, 'calculate_window_bounds', return_value={'left':0,'top':0,'width':1100,'height':800}),
+                    mock.patch.object(auto_login, 'apply_browser_window_bounds', return_value=False),
+                    mock.patch.object(auto_login, 'login_chatgpt_web', return_value=(True, None)),
+                    mock.patch.object(auto_login, 'verify_personal_account_label') as verify,
+                    mock.patch.object(auto_login, '_session_shutdown_event') as shutdown,
+                    mock.patch.object(auto_login, '_kept_browser_sessions', {}),
+                    mock.patch('sys.stdout', new_callable=io.StringIO),
+                ):
+                    start.return_value.start.return_value = pw
+                    shutdown.wait.return_value = False
+                    shutdown.is_set.return_value = False
+                    result = auto_login.login_web_one_account(1, 1, ('demo@example.test','synthetic',''),
+                                                             open_link='https://example.test/', reload_after=3)
+                self.assertEqual(result['status'], 'success')
+                self.assertEqual(result['postLoginError'], expected)
+                self.assertEqual(result['linkOpened'], failed_step != 'secondary_load')
+                self.assertFalse(result['personalAccountVerified'])
+                verify.assert_not_called()
+                page.bring_to_front.assert_called_once_with()
+                if failed_step != 'main_reload':
+                    shutdown.wait.assert_not_called()
+                    page.reload.assert_not_called()
+                page.close.assert_not_called()
+                extra.close.assert_not_called()
+                context.close.assert_not_called()
+                browser.close.assert_not_called()
+                pw.stop.assert_not_called()
 
     def test_queue_and_background_thread_receive_custom_delay(self):
         accounts = [('demo@example.test', 'synthetic', '')]

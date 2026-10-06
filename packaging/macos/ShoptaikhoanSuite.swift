@@ -23,6 +23,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         open.target = self
         menu.addItem(open)
         menu.addItem(.separator())
+        for (title, address) in [
+            ("2FA & Password", "http://twofa.localhost:5050/"),
+            ("Codex Export", "http://export.localhost:5050/"),
+            ("Browser Login & 9Router", "http://browser.localhost:5050/")
+        ] {
+            let tool = NSMenuItem(title: title, action: #selector(openTool(_:)), keyEquivalent: "")
+            tool.target = self
+            tool.representedObject = URL(string: address)!
+            menu.addItem(tool)
+        }
+        menu.addItem(.separator())
+        let close = NSMenuItem(title: "Đóng toàn bộ tab Chrome của tool", action: #selector(closeToolWindows(_:)), keyEquivalent: "")
+        close.target = self
+        menu.addItem(close)
+        // The close action disables itself while its asynchronous request runs.
+        menu.autoenablesItems = false
+        menu.addItem(.separator())
         let quit = NSMenuItem(title: "Thoát Shoptaikhoan Suite", action: #selector(quitApp), keyEquivalent: "q")
         quit.target = self
         menu.addItem(quit)
@@ -115,11 +132,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }.resume()
     }
 
-    private func showError(_ message: String) {
-        let alert = NSAlert(); alert.messageText = "Không thể mở Shoptaikhoan Suite"; alert.informativeText = message; alert.alertStyle = .critical; alert.runModal()
+    private func showError(_ message: String, title: String = "Không thể mở Shoptaikhoan Suite") {
+        let alert = NSAlert(); alert.messageText = title; alert.informativeText = message; alert.alertStyle = .critical; alert.runModal()
     }
 
     @objc private func openDashboard() { NSWorkspace.shared.open(dashboardURL) }
+    @objc private func openTool(_ sender: NSMenuItem) {
+        guard let url = sender.representedObject as? URL else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    @objc private func closeToolWindows(_ sender: NSMenuItem) {
+        guard sender.isEnabled else { return }
+        let title = sender.title
+        sender.isEnabled = false
+        sender.title = "Đang đóng tab Chrome…"
+        var request = URLRequest(url: dashboardURL.appendingPathComponent("api/windows/close"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 15
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            let payload = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+            let succeeded = (response as? HTTPURLResponse)?.statusCode == 200 && payload?["closed"] is NSNumber
+            DispatchQueue.main.async {
+                sender.isEnabled = true
+                if succeeded {
+                    let count = (payload?["closed"] as? NSNumber)?.intValue ?? 0
+                    sender.title = count > 0 ? "Đã đóng các tab Chrome của tool" : "Không có tab tool đang mở"
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) { sender.title = title }
+                } else {
+                    sender.title = title
+                    self?.showError(error?.localizedDescription ?? "Hãy kiểm tra Suite đang chạy.", title: "Không thể đóng tab Chrome của tool")
+                }
+            }
+        }.resume()
+    }
     @objc private func quitApp() { NSApplication.shared.terminate(nil) }
 }
 

@@ -796,6 +796,7 @@ def _safe_web_login_result(result):
         "linkOpened": bool(result.get("linkOpened")),
         "chatgptReloaded": bool(result.get("chatgptReloaded")),
         "personalAccountVerified": bool(result.get("personalAccountVerified")),
+        "postLoginError": str(result.get("postLoginError") or "")[:80],
         "codexOpened": bool(result.get("codexOpened")),
         "error": str(result.get("error") or "")[:500],
         "startedAt": str(result.get("startedAt") or "")[:60],
@@ -922,6 +923,7 @@ def record_web_login_history(result):
         "linkOpened": bool(result.get("linkOpened")),
         "chatgptReloaded": bool(result.get("chatgptReloaded")),
         "personalAccountVerified": bool(result.get("personalAccountVerified")),
+        "postLoginError": str(result.get("postLoginError") or "")[:80],
     }
     with _web_login_history_lock:
         entries = load_web_login_history()
@@ -1372,6 +1374,7 @@ def _web_login_worker(accounts, workers=3, link_url="", run_id=None, reload_afte
                     "linkUrl": link_by_email.get(email, status.get("linkUrl", "")),
                     "chatgptReloaded": metadata.get("reloaded") == "yes" or reload_by_email.get(email, False),
                     "personalAccountVerified": metadata.get("personal") == "yes",
+                    "postLoginError": metadata.get("flow_error", ""),
                     "codexOpened": metadata.get("codex") == "yes",
                     "error": metadata.get("error", ""),
                     "startedAt": datetime.fromtimestamp(
@@ -1399,7 +1402,13 @@ def _web_login_worker(accounts, workers=3, link_url="", run_id=None, reload_afte
                         "Đăng nhập thành công · Đã xác minh Personal account"
                         if terminal_status == "success" and result["personalAccountVerified"]
                         else (
-                            "Đã vào ChatGPT · Chưa xác minh Personal account"
+                            "Đã vào ChatGPT · {}"
+                            .format({
+                                "link_error": "tab phụ chưa tải xong",
+                                "main_tab_error": "không quay lại được tab chính",
+                                "reload_error": "reload tab chính thất bại",
+                                "cancelled": "đã dừng trước khi kiểm tra Personal account",
+                            }.get(result.get("postLoginError"), "Chưa xác minh Personal account"))
                             if terminal_status == "success"
                             else (metadata.get("error") or "Đăng nhập thất bại")
                         )

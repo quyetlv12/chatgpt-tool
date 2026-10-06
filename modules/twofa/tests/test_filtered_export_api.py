@@ -139,6 +139,18 @@ class FilteredExportApiTests(unittest.TestCase):
         self.assertIn("/api/jobs/{job_id}/passkey/start", route_paths)
         self.assertIn("/api/passkey/launch/{launch_token}", route_paths)
 
+    def test_database_sync_status_requires_token_and_never_exposes_config(self) -> None:
+        from unittest.mock import patch
+
+        self.assertEqual(self.client.get("/api/database-sync").status_code, 401)
+        safe = {"state": "offline", "pending": 7, "last_error": "OperationalError", "last_success_at": None}
+        with patch.object(server.database_sync, "status", return_value=safe):
+            response = self.client.get("/api/database-sync", headers={"X-Auth-Token": server.auth_token})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), safe)
+        self.assertEqual(response.headers["cache-control"], "no-store")
+        self.assertEqual(response.headers["x-content-type-options"], "nosniff")
+
     def test_passkey_page_is_a_dedicated_route(self) -> None:
         response = self.client.get("/passkey")
 

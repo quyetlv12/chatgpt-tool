@@ -78,7 +78,6 @@ DEFAULT_WEB_LINK = ""  # Only an explicit --open-link enables the secondary tab.
 DESKTOP_USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 MIN_DESKTOP_WINDOW_WIDTH = 900
 MIN_BATCH_SCREEN_WIDTH = 1600
-MIN_BROWSER_VIEWPORT_HEIGHT = 120
 SINGLE_WINDOW_VERTICAL_PADDING = 32
 _event_output_lock = threading.Lock()
 _screen_size_lock = threading.Lock()
@@ -198,15 +197,9 @@ def calculate_window_bounds(index, total, screen_width=None, screen_height=None)
 
 
 def build_web_context_options(window_bounds):
-    """Build an explicit desktop browser context matching its native tile."""
-    viewport = {
-        "width": max(800, int(window_bounds["width"])),
-        "height": max(MIN_BROWSER_VIEWPORT_HEIGHT, int(window_bounds["height"])),
-    }
+    """Let Chrome's content area follow the native tile, excluding browser UI."""
     return {
-        "viewport": viewport,
-        "screen": dict(viewport),
-        "device_scale_factor": 1,
+        "no_viewport": True,
         "is_mobile": False,
         "has_touch": False,
         "user_agent": DESKTOP_USER_AGENT,
@@ -306,14 +299,6 @@ def execute_browser_control_command(entry, command):
             return True
         if action == "layout":
             bounds = command.get("bounds") or {}
-            viewport = {
-                "width": max(320, int(bounds["width"])),
-                "height": max(MIN_BROWSER_VIEWPORT_HEIGHT, int(bounds["height"])),
-            }
-            page.set_viewport_size(viewport)
-            link_page = entry.get("link_page")
-            if link_page:
-                link_page.set_viewport_size(viewport)
             applied = apply_browser_window_bounds(entry.get("context"), page, bounds)
             if applied:
                 emit_web_phase(
@@ -1352,13 +1337,12 @@ def verify_personal_account_label(page, timeout=15000):
         # nesting changes while still rejecting partial/hidden matches.
         handle = page.wait_for_function(
             """
-            expected => Array.from(document.querySelectorAll(
-              'span, button, a, [role="button"]'
-            )).some(element => {
-              const text = (element.textContent || '').trim();
+            expected => Array.from(document.querySelectorAll('body *')).some(element => {
+              const text = (element.innerText || '').trim();
+              const style = window.getComputedStyle(element);
               const visible = Boolean(
                 element.offsetWidth || element.offsetHeight || element.getClientRects().length
-              );
+              ) && style.visibility === 'visible' && style.opacity !== '0';
               return visible && text === expected;
             })
             """,
@@ -1902,33 +1886,55 @@ def login_web_one_account(
             return finish({"email": email, "status": "error", "error": error, "index": index})
 
         link_page = None
+        link_opened = False
         link_error = None
+        post_login_error = ""
         if open_link:
             try:
                 emit_web_phase(email, index, "open_link", "Đang mở tab phụ")
                 link_page = context.new_page()
-                link_page.goto(open_link, wait_until="domcontentloaded", timeout=45000)
+                # `load` waits for the secondary page's browser load event. A
+                # network-idle wait is intentionally avoided because many
+                # pages keep long-lived requests open.
+                link_page.goto(open_link, wait_until="load", timeout=45000)
+                link_opened = True
                 print("WEB_LINK_OPEN|{}|{}".format(email, open_link), flush=True)
-                emit_web_phase(email, index, "link_ready", "Tab phụ đã mở")
+                emit_web_phase(email, index, "link_ready", "Tab phụ đã tải xong")
             except Exception as error:
                 link_error = str(error)
+                post_login_error = "link_error"
                 print("WEB_LINK_FAIL|{}|{}|{}".format(email, open_link, link_error.replace("|", "/")), flush=True)
                 emit_web_phase(email, index, "link_error", "Tab phụ mở không thành công")
+            finally:
+                # Opening a new page can move focus away from ChatGPT. Return
+                # to the original page before any delay, reload, or account
+                # validation so each worker keeps its own deterministic order.
+                try:
+                    page.bring_to_front()
+                    emit_web_phase(email, index, "main_tab_ready", "Đã quay lại tab chính ChatGPT")
+                except Exception:
+                    post_login_error = post_login_error or "main_tab_error"
+                    emit_web_phase(email, index, "main_tab_error", "Không đưa được tab chính lên trước; vẫn giữ phiên")
         reloaded = False
         reload_error = ""
-        if reload_after is not None:
+        if reload_after is not None and not post_login_error:
             emit_web_phase(email, index, "reload_wait", "Chờ {} giây để reload tab ChatGPT một lần".format(reload_after))
             if not _session_shutdown_event.wait(reload_after):
                 try:
-                    page.reload(wait_until="domcontentloaded", timeout=45000)
+                    page.reload(wait_until="load", timeout=45000)
                     reloaded = True
                     print("WEB_CHATGPT_RELOAD|{}".format(email), flush=True)
                     emit_web_phase(email, index, "reloaded", "Đã reload tab ChatGPT một lần; giữ tab để bạn sử dụng")
                 except Exception as error:
                     reload_error = type(error).__name__
+                    post_login_error = "reload_error"
                     emit_web_phase(email, index, "reload_error", "Không reload được; giữ nguyên phiên đăng nhập, không thử lại")
+            else:
+                post_login_error = "cancelled"
+        if not codex_web and _session_shutdown_event.is_set():
+            post_login_error = post_login_error or "cancelled"
         personal_account_verified = False
-        if not codex_web:
+        if not codex_web and not post_login_error:
             emit_web_phase(email, index, "personal_account_check", "Đang kiểm tra nhãn Personal account")
             personal_account_verified = verify_personal_account_label(page)
             emit_web_phase(email, index,
@@ -1957,12 +1963,13 @@ def login_web_one_account(
             "index": index,
             "status": "success",
             "webOpened": True,
-            "linkOpened": bool(link_page),
+            "linkOpened": link_opened,
             "linkUrl": open_link,
             "linkError": link_error or "",
             "chatgptReloaded": reloaded,
             "chatgptReloadError": reload_error,
             "personalAccountVerified": personal_account_verified,
+            "postLoginError": post_login_error,
             "codexOpened": codex_opened,
         }
         emit_event(
@@ -1970,10 +1977,11 @@ def login_web_one_account(
             email,
             index=index,
             web="yes",
-            link="yes" if link_page else "no",
+            link="yes" if link_opened else "no",
             reloaded="yes" if result["chatgptReloaded"] else "no",
             personal="yes" if result["personalAccountVerified"] else "no",
             codex="yes" if codex_opened else "no",
+            flow_error=post_login_error,
         )
         finish(result)
 
@@ -2032,7 +2040,6 @@ def run_web_login_queue(
     initial_pending = deque(range(total))
     retry_pending = []
     retry_counts = [0] * total
-    available_layout_slots = deque(range(1, active_limit + 1))
 
     def report_result(result_index, attempt, layout_index, result):
         attempt_key = (result_index, attempt)
@@ -2058,7 +2065,10 @@ def run_web_login_queue(
                 result = login_job(
                     *common_args,
                     layout_index=layout_index,
-                    layout_total=active_limit,
+                    # Every successful account remains open. Use its stable
+                    # account slot instead of recycling the worker slot, or a
+                    # later account would launch on top of a retained window.
+                    layout_total=total,
                     reload_after=reload_after,
                     codex_web=codex_web,
                 )
@@ -2100,7 +2110,7 @@ def run_web_login_queue(
                 _, result_index, attempt = heapq.heappop(retry_pending)
             else:
                 break
-            layout_index = available_layout_slots.popleft()
+            layout_index = result_index + 1
             start_account(result_index, attempt, layout_index)
             active_attempts += 1
 
@@ -2113,7 +2123,6 @@ def run_web_login_queue(
             continue
 
         active_attempts = max(0, active_attempts - 1)
-        available_layout_slots.append(layout_index)
         if result.get("status") == "success" or codex_web:
             if codex_web and result.get("status") != "success":
                 emit_event("ERROR", accounts[result_index][0], index=result_index + 1,

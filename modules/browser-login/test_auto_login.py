@@ -74,13 +74,16 @@ class WebLoginLinkCommandTests(unittest.TestCase):
                 self.assertEqual(result['linkOpened'], bool(link))
                 self.assertFalse(result['chatgptReloaded'])
                 context.new_page.return_value.reload.assert_not_called()
-                context.new_page.return_value.bring_to_front.assert_not_called()
+                if link:
+                    context.new_page.return_value.bring_to_front.assert_called_once_with()
+                else:
+                    context.new_page.return_value.bring_to_front.assert_not_called()
                 context.new_page.return_value.close.assert_not_called()
                 context.close.assert_not_called()
                 playwright.chromium.launch.return_value.close.assert_not_called()
                 playwright.stop.assert_not_called()
                 if link:
-                    context.new_page.return_value.goto.assert_called_once_with(link, wait_until='domcontentloaded', timeout=45000)
+                    context.new_page.return_value.goto.assert_called_once_with(link, wait_until='load', timeout=45000)
                 else:
                     context.new_page.return_value.goto.assert_not_called()
 
@@ -216,6 +219,19 @@ class FakePageWithUnrelatedCaption(FakePersonalAccountPage):
 
 
 class PersonalAccountVerificationTests(unittest.TestCase):
+    def test_accepts_exact_personal_account_label_in_a_visible_div(self):
+        playwright = auto_login.sync_playwright().start()
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page()
+        try:
+            page.set_content(
+                '<button>Scheduled</button><div style="display:block">Personal account</div>'
+            )
+            self.assertTrue(verify_personal_account_label(page, timeout=1000))
+        finally:
+            browser.close()
+            playwright.stop()
+
     def test_accepts_exact_personal_account_label_after_waiting_for_element(self):
         page = FakePersonalAccountPage("  Personal account\n")
 
@@ -296,14 +312,16 @@ class BrowserWindowLayoutTests(unittest.TestCase):
         self.assertTrue(all(item["width"] == 1173 for item in bounds))
         self.assertTrue(all(item["height"] == 1024 for item in bounds))
 
-    def test_web_context_uses_tile_as_desktop_viewport(self):
+    def test_web_context_uses_native_content_area_as_desktop_viewport(self):
         options = build_web_context_options({"width": 877, "height": 507})
 
-        self.assertEqual(options["viewport"], {"width": 877, "height": 507})
-        self.assertEqual(options["screen"], {"width": 877, "height": 507})
+        self.assertTrue(options["no_viewport"])
+        self.assertNotIn("viewport", options)
+        self.assertNotIn("screen", options)
+        self.assertNotIn("device_scale_factor", options)
         self.assertFalse(options["is_mobile"])
         self.assertFalse(options["has_touch"])
-        self.assertEqual(options["device_scale_factor"], 1)
+        self.assertEqual(options["user_agent"], auto_login.DESKTOP_USER_AGENT)
 
     def test_ten_accounts_use_two_desktop_columns_without_overlap(self):
         bounds = [
@@ -314,10 +332,7 @@ class BrowserWindowLayoutTests(unittest.TestCase):
         self.assertEqual(sorted({item["left"] for item in bounds}), [10, 1029])
         self.assertTrue(all(item["width"] == 1009 for item in bounds))
         self.assertTrue(all(item["height"] == 196 for item in bounds))
-        self.assertEqual(
-            build_web_context_options(bounds[0])["viewport"],
-            {"width": 1009, "height": 196},
-        )
+        self.assertTrue(build_web_context_options(bounds[0])["no_viewport"])
 
         for offset, first in enumerate(bounds):
             for second in bounds[offset + 1:]:
@@ -338,10 +353,7 @@ class BrowserWindowLayoutTests(unittest.TestCase):
         self.assertEqual(sorted({item["left"] for item in bounds}), [10, 885])
         self.assertTrue(all(item["width"] == 865 for item in bounds))
         self.assertTrue(all(item["height"] == 150 for item in bounds))
-        self.assertEqual(
-            build_web_context_options(bounds[0])["viewport"],
-            {"width": 865, "height": 150},
-        )
+        self.assertTrue(build_web_context_options(bounds[0])["no_viewport"])
 
     def test_tiles_five_windows_without_overlap_inside_screen(self):
         bounds = [
@@ -503,13 +515,13 @@ class BrowserControlTests(unittest.TestCase):
             self.assertTrue(execute_browser_control_command(entry, {"action": "layout", "bounds": bounds}))
 
         page.bring_to_front.assert_called_once()
-        page.set_viewport_size.assert_called_once_with({"width": 1009, "height": 196})
-        link_page.set_viewport_size.assert_called_once_with({"width": 1009, "height": 196})
+        page.set_viewport_size.assert_not_called()
+        link_page.set_viewport_size.assert_not_called()
         apply_bounds.assert_called_once_with(context, page, bounds)
 
 
 class WebLoginQueueTests(unittest.TestCase):
-    def test_large_account_list_uses_concurrent_worker_layout_slots(self):
+    def test_large_account_list_uses_stable_account_layout_slots(self):
         accounts = [(f"user{index}@example.com", "password", "") for index in range(15)]
         lock = threading.Lock()
         active_slots = set()
@@ -535,6 +547,7 @@ class WebLoginQueueTests(unittest.TestCase):
                     collisions.append(layout_index)
                 active_slots.add(layout_index)
                 layouts.append((layout_index, layout_total))
+            report_terminal({"email": account[0], "status": "success"})
             time.sleep(0.005)
             with lock:
                 active_slots.discard(layout_index)
@@ -545,8 +558,8 @@ class WebLoginQueueTests(unittest.TestCase):
 
         self.assertEqual(len(results), 15)
         self.assertFalse(collisions)
-        self.assertEqual({layout[0] for layout in layouts}, {1, 2})
-        self.assertTrue(all(layout[1] == 2 for layout in layouts))
+        self.assertEqual({layout[0] for layout in layouts}, set(range(1, 16)))
+        self.assertTrue(all(layout[1] == 15 for layout in layouts))
 
     def test_runs_every_account_with_at_most_requested_concurrency(self):
         accounts = [(f"user{index}@example.com", "password", "") for index in range(8)]

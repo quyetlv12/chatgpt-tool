@@ -3,6 +3,7 @@
 
   const state = { token: '', jobs: new Map(), filter: 'all', settings: {}, workerHealth: null, connection: 'offline', events: null, eventBatcher: null, output: '', draftTimer: null, pendingLaunch: null, pendingChangeJobId: null, pendingDeleteChatsJobId: null, selectedLogoutJobIds: new Set(), pendingLogoutJobIds: [], pendingPasskeyJobId: null, passkeyPreparing: false, passkeyWindow: null, logoutPending: false, pendingRowChangeResults: new Set(), pendingRechecks: new Set(), activeChangeResultJobId: null, twofaHistory: [], clearAllPending: false };
   const LAUNCH_REQUEST_TIMEOUT_MS = 15000;
+  Object.assign(state, { journals: [], journal: null, journalChoice: '', journalLoading: false, journalSaving: false, journalRequestVersion: 0 });
   const $ = (id) => document.getElementById(id);
   const icon = (name) => `<svg class="ui-icon" aria-hidden="true" focusable="false"><use href="/assets/tabler-icons.svg?v=1.0.3#ti-${name}"></use></svg>`;
   const statusLabels = { queued: 'ĐANG CHỜ', running: 'ĐANG CHẠY', success: 'THÀNH CÔNG', error: 'LỖI', cancelled: 'ĐÃ DỪNG' };
@@ -20,6 +21,123 @@
     if (job.status === 'success') return `THÀNH CÔNG · ${planLabel(job)}`;
     if (job.status === 'error' && job.error_kind) return errorLabels[job.error_kind] || 'LỖI';
     return statusLabels[job.status] || job.status;
+  }
+
+  function isJournalView() {
+    return Boolean(state.journal || state.journalLoading);
+  }
+
+  function displayedJobs() {
+    if (state.journalLoading) return [];
+    return state.journal ? state.journal.jobs : [...state.jobs.values()];
+  }
+
+  function liveJournalCount() {
+    return [...state.jobs.values()].filter((job) => job.status === 'success'
+      && job.account_state === 'live' && job.login_verified && !job.rotated_pending_verify).length;
+  }
+
+  function renderJournalControls() {
+    const count = liveJournalCount();
+    $('live-journal-count').textContent = count;
+    $('save-live-journal').disabled = state.journalSaving || isJournalView() || count === 0;
+    $('save-live-journal').setAttribute('aria-busy', String(state.journalSaving));
+    $('live-journal-select').setAttribute('aria-busy', String(state.journalLoading));
+    $('live-journal-name').disabled = state.journalSaving || isJournalView();
+    $('leave-live-journal').hidden = !isJournalView();
+    const message = state.journalLoading
+      ? 'Đang tải nhật ký… Danh sách hiện tại không bị thay đổi.'
+      : state.journal
+        ? `Đang xem: ${state.journal.journal.name} · ${new Date(state.journal.journal.created_at * 1000).toLocaleString('vi-VN')} · Live tại thời điểm lưu, chưa kiểm tra lại. Chỉ xem và copy; hàng đợi hiện tại vẫn chạy riêng.`
+        : 'Lưu toàn bộ tài khoản Live đã xác minh. Nhật ký vẫn còn sau khi dọn danh sách.';
+    if ($('live-journal-status').textContent !== message) $('live-journal-status').textContent = message;
+    const viewStatus = $('live-journal-view-status');
+    viewStatus.hidden = !isJournalView();
+    if (viewStatus.textContent !== message) viewStatus.textContent = message;
+  }
+
+  function openLiveJournal() {
+    renderJournalControls();
+    $('live-journal-modal').showModal();
+    $(isJournalView() ? 'live-journal-select' : 'live-journal-name').focus();
+    refreshLiveJournals().catch(() => toast('Chưa tải được nhật ký. Hãy đóng và mở lại để thử lại.', 'error'));
+  }
+
+  async function refreshLiveJournals() {
+    const data = await api('/api/live-journals', { cache: 'no-store', timeoutMs: LAUNCH_REQUEST_TIMEOUT_MS });
+    state.journals = data.journals;
+    const select = $('live-journal-select');
+    select.replaceChildren();
+    const current = document.createElement('option');
+    current.value = ''; current.textContent = 'Danh sách hiện tại'; select.appendChild(current);
+    state.journals.forEach((journal) => {
+      const option = document.createElement('option');
+      option.value = journal.id;
+      option.textContent = `${journal.name} · ${journal.account_count} tài khoản · ${new Date(journal.created_at * 1000).toLocaleString('vi-VN')}`;
+      select.appendChild(option);
+    });
+    select.value = state.journalChoice;
+  }
+
+  function leaveLiveJournal() {
+    state.journalRequestVersion += 1;
+    state.journal = null; state.journalChoice = ''; state.journalLoading = false;
+    $('live-journal-select').value = '';
+    render();
+    $('live-journal-modal').close();
+  }
+
+  async function selectLiveJournal(id) {
+    if (!id) return leaveLiveJournal();
+    const version = ++state.journalRequestVersion;
+    state.journalChoice = id;
+    state.journalLoading = true;
+    state.filter = 'all';
+    document.querySelectorAll('.filter').forEach((button) => button.classList.toggle('active', button.dataset.filter === 'all'));
+    state.selectedLogoutJobIds.clear();
+    render();
+    try {
+      const data = await api(`/api/live-journals/${encodeURIComponent(id)}`, { cache: 'no-store', timeoutMs: LAUNCH_REQUEST_TIMEOUT_MS });
+      if (version !== state.journalRequestVersion) return;
+      state.journal = data;
+      $('live-journal-modal').close();
+    } catch (error) {
+      if (version !== state.journalRequestVersion) return;
+      state.journalChoice = state.journal?.journal.id || '';
+      $('live-journal-select').value = state.journalChoice;
+      toast(`Không tải được nhật ký: ${error.message}`, 'error');
+    } finally {
+      if (version === state.journalRequestVersion) {
+        state.journalLoading = false;
+        render();
+      }
+    }
+  }
+
+  async function saveLiveJournal(event) {
+    event.preventDefault();
+    if (state.journalSaving || isJournalView() || liveJournalCount() === 0) return;
+    state.journalSaving = true;
+    renderJournalControls();
+    try {
+      const data = await api('/api/live-journals', { method: 'POST',
+        body: JSON.stringify({ name: $('live-journal-name').value.trim() }), timeoutMs: LAUNCH_REQUEST_TIMEOUT_MS });
+      $('live-journal-name').value = '';
+      toast(`Đã lưu nhật ký ${data.journal.account_count} tài khoản Live.`);
+      $('live-journal-modal').close();
+      try {
+        await refreshLiveJournals();
+      } catch (_) {
+        toast('Nhật ký đã lưu. Chưa tải lại được danh sách nhật ký; hãy tải lại trang để xem.', 'error');
+      }
+    } catch (error) {
+      toast(error.name === 'AbortError'
+        ? 'Lưu nhật ký quá thời gian chờ. Hãy tải lại danh sách nhật ký trước khi lưu lại.'
+        : `Chưa hoàn tất lưu nhật ký: ${error.message}`, 'error');
+    } finally {
+      state.journalSaving = false;
+      renderJournalControls();
+    }
   }
 
   function renderConnection() {
@@ -159,37 +277,53 @@
   }
 
   function counts() {
-    const jobs = [...state.jobs.values()];
-    const running = jobs.filter((job) => ['queued', 'running'].includes(job.status)).length;
-    const success = jobs.filter((job) => job.status === 'success').length;
-    const error = jobs.filter((job) => ['error', 'cancelled'].includes(job.status)).length;
+    const jobs = displayedJobs();
+    const runtimeJobs = [...state.jobs.values()];
+    const running = runtimeJobs.filter((job) => ['queued', 'running'].includes(job.status)).length;
+    const success = runtimeJobs.filter((job) => job.status === 'success').length;
+    const error = runtimeJobs.filter((job) => ['error', 'cancelled'].includes(job.status)).length;
     const clearableErrors = jobs.filter(isClearableFailure).length;
     const lowUsage = jobs.filter((job) => window.UsageUI?.isBelowUsageThreshold(job.usage, 50)).length;
     const fullUsage = jobs.filter((job) => window.UsageUI?.isUsageFullyUsed(job.usage)).length;
     const freeWithoutUsage = jobs.filter((job) => window.UsageUI?.isFreeWithoutUsage(job)).length;
     const retryableErrors = jobs.filter((job) => ['error', 'cancelled'].includes(job.status) && job.retryable !== false).length;
+    $('stop-all').hidden = isJournalView() || running === 0;
+    $('stop-all').disabled = isJournalView() || running === 0;
+    const canClear = canClearAllJobs();
+    $('clear-all').hidden = isJournalView() || (!canClear && !state.clearAllPending);
+    $('clear-all').disabled = isJournalView() || state.clearAllPending || !canClear;
     $('metric-running').textContent = running;
     $('metric-success').textContent = success;
     $('metric-errors').textContent = error;
     $('count-all').textContent = jobs.length;
-    $('count-running').textContent = running;
-    $('count-success').textContent = success;
+    $('count-running').textContent = jobs.filter((job) => ['queued', 'running'].includes(job.status)).length;
+    $('count-success').textContent = jobs.filter((job) => job.status === 'success').length;
     $('count-usage-low').textContent = lowUsage;
     $('count-usage-full').textContent = fullUsage;
     $('count-free-no-usage').textContent = freeWithoutUsage;
-    $('count-error').textContent = error;
+    $('count-error').textContent = jobs.filter((job) => ['error', 'cancelled'].includes(job.status)).length;
     $('retry-failed-count').textContent = retryableErrors;
-    $('retry-failed').disabled = retryableErrors === 0;
+    $('retry-failed').hidden = isJournalView() || retryableErrors === 0;
+    $('retry-failed').disabled = isJournalView() || retryableErrors === 0;
     $('clear-failed-count').textContent = clearableErrors;
-    $('clear-failed').disabled = clearableErrors === 0;
+    $('clear-failed').hidden = isJournalView() || clearableErrors === 0;
+    $('clear-failed').disabled = isJournalView() || clearableErrors === 0;
   }
 
   function isClearableFailure(job) {
     return ['error', 'cancelled'].includes(job.status) && job.account_state !== 'live';
   }
 
+  function canClearAllJobs() {
+    return state.jobs.size > 0 && [...state.jobs.values()].every((job) =>
+      ['success', 'error', 'cancelled'].includes(job.status)
+      && !job.usage_refreshing && !job.chat_deleting
+      && !job.sessions_logging_out && !job.passkey_preparing
+      && !state.pendingRechecks.has(job.id) && !state.pendingRowChangeResults.has(job.id));
+  }
+
   function filteredJobs() {
-    const jobs = [...state.jobs.values()].sort((a, b) => a.created_at - b.created_at);
+    const jobs = [...displayedJobs()].sort((a, b) => a.created_at - b.created_at);
     if (state.filter === 'running') return jobs.filter((j) => ['queued', 'running'].includes(j.status));
     if (state.filter === 'error') return jobs.filter((j) => ['error', 'cancelled'].includes(j.status));
     if (state.filter === 'success') return jobs.filter((j) => j.status === 'success');
@@ -227,6 +361,7 @@
       return '<div class="usage-placeholder loading"><i></i><span>Đang đọc lại Usage…</span></div>';
     }
     if (job.status === 'success' && job.account_state === 'live') {
+      if (isJournalView()) return '<div class="usage-placeholder unavailable"><span>Không có Usage tại thời điểm lưu</span></div>';
       return `<div class="usage-placeholder unavailable"><span>Không đọc được Usage</span><small>Tài khoản vẫn được xác minh</small><button type="button" class="usage-retry" data-action="refresh-usage" ${job.chat_deleting || isLoggingOut(job) ? 'disabled' : ''}>${icon('refresh')}<span>Đọc lại Usage</span></button></div>`;
     }
     return '<div class="usage-placeholder"><span>Chưa có dữ liệu</span></div>';
@@ -287,33 +422,35 @@
     const eligibleVisibleJobs = visibleJobs.filter(isLogoutEligible);
     const selectedVisibleCount = eligibleVisibleJobs.filter((job) => state.selectedLogoutJobIds.has(job.id)).length;
     const selectAll = $('select-all-logout');
-    selectAll.disabled = state.logoutPending || eligibleVisibleJobs.length === 0;
+    selectAll.disabled = isJournalView() || state.logoutPending || eligibleVisibleJobs.length === 0;
     selectAll.checked = eligibleVisibleJobs.length > 0 && selectedVisibleCount === eligibleVisibleJobs.length;
     selectAll.indeterminate = selectedVisibleCount > 0 && selectedVisibleCount < eligibleVisibleJobs.length;
 
     const selectedCount = state.selectedLogoutJobIds.size;
     $('logout-selected-count').textContent = selectedCount;
-    $('logout-selected').disabled = state.logoutPending || selectedCount === 0;
+    $('logout-selected').hidden = isJournalView() || selectedCount === 0;
+    $('logout-selected').disabled = isJournalView() || state.logoutPending || selectedCount === 0;
     $('logout-selected').setAttribute('aria-busy', String(state.logoutPending));
   }
 
   function render() {
+    const readOnly = isJournalView();
+    renderJournalControls();
     if (!state.logoutPending) pruneLogoutSelection();
     counts();
     const clearButton = $('clear-all');
-    clearButton.disabled = state.clearAllPending;
     clearButton.setAttribute('aria-busy', String(state.clearAllPending));
     clearButton.querySelector('span').textContent = state.clearAllPending ? 'Đang dọn…' : 'Dọn danh sách';
     const jobs = filteredJobs();
     const exportMeta = window.UsageUI?.buildFilteredExportMeta(state.filter, jobs.length);
-    $('export-filtered').disabled = jobs.length === 0;
+    $('export-filtered').disabled = readOnly || jobs.length === 0;
     $('export-filtered-count').textContent = jobs.length;
     $('export-filtered').title = exportMeta?.label || 'Xuất dữ liệu của tab đang chọn';
     $('export-filtered').setAttribute('aria-label', exportMeta?.label || 'Xuất dữ liệu của tab đang chọn');
     $('empty-state').style.display = jobs.length ? 'none' : 'grid';
     $('job-list').innerHTML = jobs.map((job) => {
       const check = accountCheck(job);
-      const checkpoint = job.mode === 'check_only' && job.status === 'success'
+      const checkpoint = readOnly ? 'LIVE TẠI THỜI ĐIỂM LƯU' : job.mode === 'check_only' && job.status === 'success'
         ? 'ĐÃ CHECK LIVE'
         : job.login_verified
           ? '2FA ĐÃ XÁC MINH'
@@ -330,7 +467,7 @@
       const loggingOut = isLoggingOut(job);
       const passkeyPreparing = isPasskeyPreparing(job);
       const accountBusy = chatDeleting || loggingOut || passkeyPreparing;
-      const canSelectLogout = isLogoutEligible(job);
+      const canSelectLogout = !readOnly && isLogoutEligible(job);
       const logoutSelected = state.selectedLogoutJobIds.has(job.id);
       return `<tr data-id="${job.id}" title="${escapeHtml(job.error || '')}">
         <td class="logout-select-cell"><input type="checkbox" data-logout-select aria-label="Chọn ${escapeHtml(job.email)} để logout tất cả phiên" ${logoutSelected ? 'checked' : ''} ${canSelectLogout && !state.logoutPending ? '' : 'disabled'}></td>
@@ -340,7 +477,8 @@
         <td class="usage-cell">${usageCell(job)}</td>
         <td class="payment-cell">${paymentCell(job)}</td>
         <td><div class="row-actions">
-          <button type="button" class="icon-button copy-raw" data-action="copy-raw" title="Copy raw" aria-label="Copy raw của ${escapeHtml(job.email)}">${icon('copy')}</button>
+          <button type="button" class="icon-button copy-raw" data-action="copy-raw" title="Copy raw" aria-label="Copy raw của ${escapeHtml(job.email)}" ${state.journalLoading ? 'disabled' : ''}>${icon('copy')}</button>
+          ${readOnly ? '' : `
           ${canChangeTwoFA ? `<button type="button" class="icon-button change-2fa" data-action="change-2fa" title="Đổi 2FA ngay" aria-label="Đổi 2FA cho ${escapeHtml(job.email)}" ${accountBusy ? 'disabled' : ''}>${icon('key')}</button>` : ''}
           ${canDeleteChats ? `<button type="button" class="icon-button delete-chats ${chatDeleting ? 'is-pending' : ''}" data-action="delete-chats" title="Xóa hết dữ liệu chat" aria-label="Xóa hết dữ liệu chat của ${escapeHtml(job.email)}" ${accountBusy ? 'disabled' : ''}>${icon(chatDeleting ? 'loader-2' : 'trash-x')}</button>` : ''}
           ${canDeleteChats ? `<button type="button" class="icon-button logout-sessions ${loggingOut ? 'is-pending' : ''}" data-action="logout-sessions" title="Logout all sessions" aria-label="Logout all sessions của ${escapeHtml(job.email)}" ${accountBusy || job.usage_refreshing || recheckPending ? 'disabled' : ''}>${icon(loggingOut ? 'loader-2' : 'logout')}</button>` : ''}
@@ -349,7 +487,7 @@
           <button type="button" class="icon-button" data-action="logs" title="Xem log" aria-label="Xem log của ${escapeHtml(job.email)}">${icon('list-details')}</button>
           ${canRetry ? `<button type="button" class="icon-button" data-action="retry" title="Thử lại" aria-label="Thử lại ${escapeHtml(job.email)}">${icon('refresh')}</button>` : ''}
           ${canStop ? `<button type="button" class="icon-button" data-action="stop" title="Dừng" aria-label="Dừng ${escapeHtml(job.email)}">${icon('player-stop')}</button>` : ''}
-          ${!canStop ? `<button type="button" class="icon-button" data-action="delete" title="Xóa" aria-label="Xóa ${escapeHtml(job.email)}" ${accountBusy ? 'disabled' : ''}>${icon('trash')}</button>` : ''}
+          ${!canStop ? `<button type="button" class="icon-button" data-action="delete" title="Xóa" aria-label="Xóa ${escapeHtml(job.email)}" ${accountBusy ? 'disabled' : ''}>${icon('trash')}</button>` : ''}`}
         </div></td></tr>`;
     }).join('');
     renderLogoutSelection(jobs);
@@ -421,6 +559,7 @@
   function openLaunchConfirmation() {
     const lines = $('combo-input').value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
     if (!lines.length) return toast('Hãy nhập ít nhất một combo.', 'error');
+    if (isJournalView()) leaveLiveJournal();
     const changing = modeValue() === 'change_2fa';
     state.pendingLaunch = { lines, mode: modeValue() };
     $('confirm-accent').className = `confirm-accent ${changing ? 'is-change' : 'is-check'}`;
@@ -469,6 +608,13 @@
 
   async function jobAction(id, action) {
     try {
+      if (isJournalView()) {
+        if (action !== 'copy-raw' || !state.journal || state.journalLoading) return;
+        const raw = await api(`/api/live-journals/${encodeURIComponent(state.journal.journal.id)}/accounts/${encodeURIComponent(id)}/raw`, { cache: 'no-store' });
+        await writeClipboard(raw);
+        toast('Đã copy tài khoản tại thời điểm lưu nhật ký.');
+        return;
+      }
       if (action === 'logs') return openLogs(id);
       if (action === 'change-2fa') return openRowChangeConfirmation(id);
       if (action === 'refresh-usage') {
@@ -1124,6 +1270,7 @@
   }
 
   async function exportFiltered() {
+    if (isJournalView()) return;
     const meta = window.UsageUI?.buildFilteredExportMeta(state.filter, filteredJobs().length);
     if (!meta || meta.count === 0) return;
     const button = $('export-filtered');
@@ -1251,10 +1398,17 @@
       const hasActiveJobs = data.jobs.some((job) => ['queued', 'running'].includes(job.status));
       $('combo-input').value = hasActiveJobs ? String(state.settings['twofa.input_draft'] || '') : '';
       loadSettingsForm(); updateEditor(); scrollEditorToTop(true); renderConnection(); render(); renderOutput(); syncEventVisibility(); await refreshOutput();
+      refreshLiveJournals().catch(() => toast('Chưa tải được danh sách nhật ký. Hãy tải lại trang để thử lại.', 'error'));
     } catch (_) { state.connection = 'offline'; renderConnection(); toast('Không kết nối được localhost :5033', 'error'); }
   }
 
   $('combo-input').addEventListener('input', scheduleDraftSave);
+  $('open-live-journal').addEventListener('click', openLiveJournal);
+  $('close-live-journal').addEventListener('click', () => $('live-journal-modal').close());
+  $('live-journal-modal').addEventListener('close', () => $('open-live-journal').focus());
+  $('live-journal-form').addEventListener('submit', saveLiveJournal);
+  $('live-journal-select').addEventListener('change', (event) => selectLiveJournal(event.target.value));
+  $('leave-live-journal').addEventListener('click', leaveLiveJournal);
   $('combo-input').addEventListener('paste', handleComboPaste);
   $('combo-input').addEventListener('scroll', syncEditorScroll);
   $('success-output').addEventListener('scroll', syncOutputScroll);
@@ -1387,7 +1541,7 @@
   });
   $('stop-all').addEventListener('click', async () => { try { await api('/api/jobs/stop-all', { method: 'POST' }); toast('Đã gửi lệnh dừng toàn bộ.'); } catch (error) { toast(error.message, 'error'); } });
   async function clearAllJobs() {
-    if (state.clearAllPending) return;
+    if (isJournalView() || state.clearAllPending || !canClearAllJobs()) return;
     state.clearAllPending = true;
     render();
     const controller = new AbortController();

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
 import time
 import uuid
@@ -1159,6 +1160,22 @@ class TwoFAJobManager:
     def raw_combo(self, job_id: str) -> str:
         job = self._require(job_id)
         return "|".join((job.email, job.password, job.secret))
+
+    def live_journal_entries(self) -> list[dict[str, Any]]:
+        """Capture current verified Live rows without enqueueing any account work."""
+        entries = []
+        for job_id in self.order:
+            job = self.jobs[job_id]
+            if not (job.status == "success" and job.account_state == "live"
+                    and job.login_verified and not job.rotated_pending_verify):
+                continue
+            snapshot = copy.deepcopy(job.snapshot())
+            # A journal is a past observation, not a log or an in-flight action.
+            snapshot.pop("log_tail", None)
+            for key in ("usage_refreshing", "chat_deleting", "sessions_logging_out", "passkey_preparing"):
+                snapshot[key] = False
+            entries.append({"email": job.email, "password": job.password, "secret": job.secret, "snapshot": snapshot})
+        return entries
 
     def snapshots(self) -> list[dict[str, Any]]:
         return [self.jobs[job_id].snapshot() for job_id in self.order if job_id in self.jobs]

@@ -18,7 +18,7 @@ assert.match(html, /id="password-combo-input"/);
 assert.match(html, /id="password-success-output" readonly/);
 assert.match(html, /id="password-history-search" type="search"/);
 assert.match(html, /id="password-history-total"/);
-assert.match(html, /dashboard\.css\?v=1\.5\.21/);
+assert.match(html, /dashboard\.css\?v=1\.5\.24/);
 assert.match(html, /class="password-history-title-cluster"/);
 assert.match(html, /class="password-history-title-icon"/);
 assert.match(html, /password-history-ui\.js\?v=1\.0\.0/);

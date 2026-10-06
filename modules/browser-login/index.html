@@ -3353,8 +3353,15 @@
           const personalAccountVerified = success && result.personalAccountVerified === true;
           const resultIndex = Number.parseInt(result.index, 10);
           const flowDetail = `${result.linkOpened ? 'tab phụ đã mở' : 'ChatGPT đang mở'}${result.chatgptReloaded ? ', tab chính đã reload một lần' : ''}`;
+          const postLoginError = result.postLoginError || '';
+          const flowErrorLabel = {
+            link_error: 'tab phụ chưa tải xong',
+            main_tab_error: 'không quay lại được tab chính',
+            reload_error: 'reload tab chính thất bại',
+            cancelled: 'đã dừng trước khi kiểm tra Personal account',
+          }[postLoginError];
           const detail = success
-            ? `${personalAccountVerified ? 'Đã xác minh Personal account' : 'Chưa xác minh Personal account'} · ${flowDetail}`
+            ? `${flowErrorLabel || (personalAccountVerified ? 'Đã xác minh Personal account' : 'Chưa xác minh Personal account')} · ${flowDetail}`
             : (result.error || 'Login lỗi');
           const statusClass = success ? (personalAccountVerified ? '' : 'warning') : 'error';
           const statusIcon = success ? (personalAccountVerified ? '✅' : '⚠️') : '❌';
@@ -3428,7 +3435,12 @@
           const statusClass = success ? (personalAccountVerified ? 'success' : 'warning') : 'error';
           const statusIcon = success ? (personalAccountVerified ? '✅' : '⚠️') : '❌';
           const statusLabel = success
-            ? (personalAccountVerified ? 'Đã xác minh Personal account' : 'Chưa xác minh Personal account')
+            ? ({
+                link_error: 'tab phụ chưa tải xong',
+                main_tab_error: 'không quay lại được tab chính',
+                reload_error: 'reload tab chính thất bại',
+                cancelled: 'đã dừng trước khi kiểm tra Personal account',
+              }[item.postLoginError] || (personalAccountVerified ? 'Đã xác minh Personal account' : 'Chưa xác minh Personal account'))
             : 'Lỗi';
           return `<div class="history-row"><span>${statusIcon}</span><span class="history-email" title="${esc(item.email || '')}">${esc(item.email || '')}</span><span class="history-status ${statusClass}">${esc(statusLabel)} · ${esc(duration)}</span><time>${esc(time)}</time></div>`;
         }).join('');
