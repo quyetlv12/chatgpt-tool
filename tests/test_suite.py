@@ -85,8 +85,67 @@ class SuiteManagerTests(unittest.TestCase):
 
         self.assertEqual(
             manager.status(),
-            {"modules": [{"key": "demo", "label": "Demo", "ready": True}]},
+            {"modules": [{"key": "demo", "label": "Demo", "ready": True}], "browser_windows_open": False},
         )
+
+    def test_browser_windows_only_include_headed_owned_chrome(self):
+        manager = suite.SuiteManager(())
+        manager.processes["browser"] = Mock(pid=10, poll=Mock(return_value=None))
+        for command in (
+            "Google Chrome --remote-debugging-pipe",
+            "chromium --remote-debugging-pipe",
+            "Brave Browser --remote-debugging-pipe --incognito",
+            "msedge --remote-debugging-pipe --incognito",
+            "Google Chrome --user-data-dir=/tmp/shoptaikhoan-passkey-chrome-test",
+        ):
+            with self.subTest(command=command), patch("suite.sys.platform", "linux"), patch("suite.subprocess.run", return_value=Mock(
+                stdout=f"10 1 module\n11 10 worker\n12 11 node\n13 12 {command}\n",
+            )):
+                self.assertTrue(manager.has_browser_windows())
+        for listing in (
+            "10 1 module\n20 1 Google Chrome --remote-debugging-pipe\n",
+            "10 1 module\n20 1 Brave Browser --remote-debugging-pipe\n",
+            "10 1 module\n11 10 worker\n",
+            "10 1 module\n11 10 chrome --remote-debugging-pipe --headless\n",
+            "10 1 module\n11 10 chrome --remote-debugging-pipe --type=renderer\n",
+        ):
+            with self.subTest(listing=listing), patch("suite.subprocess.run", return_value=Mock(stdout=listing)):
+                self.assertFalse(manager.has_browser_windows())
+
+    def test_browser_windows_fail_closed_on_process_probe_error_or_stopped_module(self):
+        manager = suite.SuiteManager(())
+        process = Mock(pid=10, poll=Mock(return_value=None))
+        manager.processes["twofa"] = process
+        with patch("suite.subprocess.run", side_effect=OSError):
+            self.assertFalse(manager.has_browser_windows())
+        process.poll.return_value = 0
+        with patch("suite.subprocess.run") as scan:
+            self.assertFalse(manager.has_browser_windows())
+            scan.assert_not_called()
+
+    def test_status_updates_after_last_owned_browser_exits(self):
+        manager = suite.SuiteManager(())
+        manager.processes["twofa"] = Mock(pid=10, poll=Mock(return_value=None))
+        with patch("suite.sys.platform", "linux"), patch("suite.subprocess.run", side_effect=[
+            Mock(stdout="10 1 module\n11 10 Chrome --user-data-dir=/tmp/shoptaikhoan-passkey-chrome-test\n"),
+            Mock(stdout="10 1 module\n"),
+        ]):
+            self.assertTrue(manager.status()["browser_windows_open"])
+            self.assertFalse(manager.status()["browser_windows_open"])
+
+    def test_macos_checks_native_windows_even_when_chrome_process_stays_alive(self):
+        manager = suite.SuiteManager(())
+        manager.processes["browser"] = Mock(pid=10, poll=Mock(return_value=None))
+        listing = "10 1 module\n11 10 chrome --remote-debugging-pipe\n20 1 Chrome\n"
+        for windows_open in ("true", "false", "invalid"):
+            with self.subTest(windows_open=windows_open), patch("suite.sys.platform", "darwin"), patch(
+                "suite.subprocess.run", side_effect=[Mock(stdout=listing), Mock(stdout=windows_open)],
+            ) as scan:
+                self.assertEqual(manager.has_browser_windows(), windows_open == "true")
+                script = scan.call_args.args[0][-1]
+                self.assertIn("var owned=[11]", script)
+                self.assertIn("w.kCGWindowLayer === 0", script)
+                self.assertIn("w.kCGWindowIsOnscreen === true", script)
 
 
 class HubServerTests(unittest.TestCase):

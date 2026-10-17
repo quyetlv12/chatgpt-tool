@@ -13,8 +13,11 @@ def test_ui_keeps_three_formats_and_defaults_to_cockpit() -> None:
         ("sub2api", "sub2api"),
     ]
     assert 'const defaultFormat = FORMATS.some(([id]) => id === prefs.format) ? prefs.format : "cockpit";' in source
-    assert 'cockpit_import: format === "cockpit"' in source
-    assert 'nine_router_import: format === "9router"' in source
+    assert 'cockpit_import: format === "cockpit" && importEnabled' in source
+    assert 'nine_router_import: format === "9router" && importEnabled' in source
+    assert 'id="auto-import"' in html
+    assert 'autoImport: document.getElementById("auto-import").checked' in source
+    assert 'document.getElementById("auto-import").checked = prefs.autoImport !== false;' in source
     assert 'id="cockpit-import"' not in html
     assert 'id="nine-router-import"' not in html
 

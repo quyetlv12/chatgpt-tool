@@ -1,4 +1,4 @@
-"""Optional one-shot reload: no real accounts, browsers, or waiting."""
+"""Reload and Personal retry checks using synthetic accounts and local pages."""
 import io
 import json
 import unittest
@@ -217,7 +217,100 @@ class WebReloadTests(unittest.TestCase):
             mock.patch.object(server.threading, 'Thread') as thread,
         ):
             self.assertTrue(server.start_web_login(['demo@example.test|synthetic|'], reload_after=37))
-            self.assertEqual(thread.call_args.kwargs['kwargs'], {'reload_after': 37, 'codex_web': False})
+            self.assertEqual(thread.call_args.kwargs['kwargs'], {'reload_after': 37, 'codex_web': False, 'browser_id': 'auto'})
+
+    def test_personal_retry_orders_tabs_until_verified_and_stops_safely(self):
+        scenarios = [
+            ('verified', [False] * 20 + [True], 3, True, '', True, 20),
+            ('already_personal', [True], 3, True, '', True, 0),
+            ('reload_off', [False], None, True, '', False, 0),
+            ('no_secondary', [False], 3, False, '', False, 0),
+            ('cancelled', [False], 3, True, 'cancelled', False, 1),
+            ('shutdown_after_check', [False], 3, True, 'cancelled', False, 0),
+            ('closed_main', [False], 3, True, 'tabs_closed', False, 0),
+            ('closed_secondary', [False], 3, True, 'tabs_closed', False, 0),
+            ('disconnected', [False], 3, True, 'tabs_closed', False, 0),
+            ('closed_during_wait', [False], 3, True, 'tabs_closed', False, 1),
+            ('secondary_reload_error', [False], 3, True, 'link_error', False, 1),
+            ('main_focus_error', [False], 3, True, 'main_tab_error', False, 1),
+            ('main_reload_error', [False], 3, True, 'reload_error', False, 1),
+        ]
+        for name, checks, delay, has_link, expected_error, verified, retries in scenarios:
+            with self.subTest(name=name):
+                pw = mock.Mock()
+                browser = pw.chromium.launch.return_value
+                context = browser.new_context.return_value
+                page, extra = mock.Mock(), mock.Mock()
+                page.is_closed.return_value = extra.is_closed.return_value = False
+                browser.is_connected.return_value = True
+                context.new_page.side_effect = [page, extra]
+                calls = mock.Mock()
+                outcomes = iter(checks)
+
+                def check_personal(_page):
+                    if name == 'closed_main':
+                        page.is_closed.return_value = True
+                    elif name == 'closed_secondary':
+                        extra.is_closed.return_value = True
+                    elif name == 'disconnected':
+                        browser.is_connected.return_value = False
+                    elif name == 'shutdown_after_check':
+                        shutdown.is_set.return_value = True
+                    return next(outcomes)
+
+                def wait(_seconds):
+                    if name == 'closed_during_wait' and calls.delay.call_count == 2:
+                        extra.is_closed.return_value = True
+                    return name == 'cancelled' and calls.delay.call_count == 2
+
+                if name == 'secondary_reload_error':
+                    extra.reload.side_effect = TimeoutError('synthetic')
+                if name == 'main_focus_error':
+                    page.bring_to_front.side_effect = [None, TimeoutError('synthetic')]
+                if name == 'main_reload_error':
+                    page.reload.side_effect = [None, TimeoutError('synthetic')]
+                with (
+                    mock.patch.object(auto_login, 'sync_playwright') as start,
+                    mock.patch.object(auto_login, 'calculate_window_bounds', return_value={'left':0,'top':0,'width':1100,'height':800}),
+                    mock.patch.object(auto_login, 'apply_browser_window_bounds', return_value=False),
+                    mock.patch.object(auto_login, 'login_chatgpt_web', return_value=(True, None)) as login,
+                    mock.patch.object(auto_login, 'verify_personal_account_label', side_effect=check_personal) as verify,
+                    mock.patch.object(auto_login, '_session_shutdown_event') as shutdown,
+                    mock.patch.object(auto_login, '_kept_browser_sessions', {}),
+                    mock.patch('sys.stdout', new_callable=io.StringIO),
+                ):
+                    start.return_value.start.return_value = pw
+                    shutdown.is_set.return_value = False
+                    shutdown.wait.side_effect = wait
+                    for label, action in (
+                        ('secondary_focus', extra.bring_to_front), ('secondary_reload', extra.reload),
+                        ('main_focus', page.bring_to_front), ('delay', shutdown.wait),
+                        ('main_reload', page.reload), ('check', verify),
+                    ):
+                        calls.attach_mock(action, label)
+                    result = auto_login.login_web_one_account(
+                        1, 1, ('demo@example.test', 'synthetic', ''),
+                        open_link='https://example.test/' if has_link else '', reload_after=delay,
+                    )
+                self.assertEqual(result['status'], 'success')
+                self.assertEqual(result['postLoginError'], expected_error)
+                self.assertEqual(result['personalAccountVerified'], verified)
+                self.assertEqual(verify.call_count, len(checks))
+                self.assertEqual(extra.reload.call_count, retries)
+                if name == 'verified':
+                    self.assertEqual([call[0] for call in calls.mock_calls],
+                                     ['main_focus', 'delay', 'main_reload', 'check'] +
+                                     ['secondary_focus', 'secondary_reload', 'main_focus',
+                                      'delay', 'main_reload', 'check'] * retries)
+                    for call in extra.reload.call_args_list + page.reload.call_args_list:
+                        self.assertEqual(call, mock.call(wait_until='load', timeout=45000))
+                if name == 'closed_during_wait':
+                    page.reload.assert_called_once()
+                login.assert_called_once()
+                self.assertEqual(context.new_page.call_count, 2 if has_link else 1)
+                for resource in (page, extra, context, browser):
+                    resource.close.assert_not_called()
+                pw.stop.assert_not_called()
 
     def test_cli_rejects_invalid_delay_before_reading_accounts(self):
         for value in ('0', '-1', '3601', '1.5', 'NaN', None):
@@ -234,6 +327,75 @@ class WebReloadTests(unittest.TestCase):
                     auto_login.main()
                 self.assertEqual(error.exception.code, 1)
                 read.assert_not_called()
+
+    def test_real_dom_retry_detects_split_personal_caption_and_retains_both_tabs(self):
+        import threading
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+        visits = {'main': 0, 'secondary': 0}
+        phases = []
+        sessions = {}
+
+        class Fixture(BaseHTTPRequestHandler):
+            def do_GET(self):
+                key = self.path.strip('/')
+                if key not in visits:
+                    self.send_response(204)
+                    self.end_headers()
+                    return
+                visits[key] += 1
+                caption = ('<span style="display:block">Personal</span><span style="display:block">account</span>'
+                           if key == 'main' and visits['secondary'] >= 5 else 'Business account')
+                if key == 'main' and visits['secondary'] < 5:
+                    caption += '<aside><span style="opacity:0">Personal account</span></aside>'
+                body = ('<!doctype html><html><body><div>' + caption + '</div></body></html>').encode()
+                self.send_response(200)
+                self.send_header('Content-Type', 'text/html; charset=utf-8')
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *_args):
+                pass
+
+        http = ThreadingHTTPServer(('127.0.0.1', 0), Fixture)
+        threading.Thread(target=http.serve_forever, daemon=True).start()
+        url = 'http://127.0.0.1:{}'.format(http.server_port)
+        pw = auto_login.sync_playwright().start()
+        launch = pw.chromium.launch
+        verify = auto_login.verify_personal_account_label
+        try:
+            with (
+                mock.patch.object(auto_login, 'sync_playwright') as start,
+                mock.patch.object(pw.chromium, 'launch', side_effect=lambda **kwargs: launch(**{**kwargs, 'headless': True})),
+                mock.patch.object(auto_login, 'login_chatgpt_web', side_effect=lambda page, *_args, **_kwargs:
+                                  (page.goto(url + '/main', wait_until='load') is not None, None)) as login,
+                mock.patch.object(auto_login, 'verify_personal_account_label', side_effect=lambda page: verify(page, timeout=300)),
+                mock.patch.object(auto_login, 'apply_browser_window_bounds', return_value=False),
+                mock.patch.object(auto_login, 'calculate_window_bounds', return_value={'left':0,'top':0,'width':1100,'height':800}),
+                mock.patch.object(auto_login, '_session_shutdown_event', threading.Event()),
+                mock.patch.object(auto_login, '_kept_browser_sessions', sessions),
+                mock.patch.object(auto_login, 'emit_web_phase', side_effect=lambda _email, _index, stage, _message: phases.append(stage)),
+                mock.patch('sys.stdout', new_callable=io.StringIO),
+            ):
+                start.return_value.start.return_value = pw
+                result = auto_login.login_web_one_account(1, 1, ('demo@example.test', 'synthetic', ''),
+                                                         open_link=url + '/secondary', reload_after=1)
+            self.assertTrue(result['personalAccountVerified'])
+            self.assertEqual(result['postLoginError'], '')
+            self.assertEqual(visits, {'main': 6, 'secondary': 5})
+            self.assertEqual(phases.count('personal_account_retry'), 4)
+            self.assertEqual(phases.count('personal_account_verified'), 1)
+            login.assert_called_once()
+            session = next(iter(sessions.values()))
+            self.assertEqual(len(session['context'].pages), 2)
+            self.assertTrue(session['browser'].is_connected())
+            self.assertTrue(all(not tab.is_closed() for tab in session['context'].pages))
+        finally:
+            for session in sessions.values():
+                session['browser'].close()
+            pw.stop()
+            http.shutdown()
+            http.server_close()
 
 
 if __name__ == '__main__':

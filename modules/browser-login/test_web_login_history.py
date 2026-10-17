@@ -297,11 +297,13 @@ class WebLoginHistoryTests(unittest.TestCase):
 
             self.assertTrue(server.send_web_login_control("focus", index=2))
             self.assertTrue(server.send_web_login_control("rearrange"))
+            self.assertTrue(server.send_web_login_control("show_all"))
 
             commands = [json.loads(line) for line in process.stdin.getvalue().splitlines()]
             self.assertEqual(commands, [
                 {"action": "focus", "index": 2},
                 {"action": "rearrange"},
+                {"action": "show_all"},
             ])
         finally:
             with server._web_login_lock:

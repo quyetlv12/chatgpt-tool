@@ -219,6 +219,35 @@ class FakePageWithUnrelatedCaption(FakePersonalAccountPage):
 
 
 class PersonalAccountVerificationTests(unittest.TestCase):
+    def test_normalizes_rendered_personal_label_without_accepting_hidden_or_partial_text(self):
+        cases = [
+            ('nbsp', '<div>Personal&nbsp;account</div>', True),
+            ('narrow_nbsp', '<div>Personal&#8239;account</div>', True),
+            ('multiple_spaces', '<div style="white-space:pre"> Personal   account </div>', True),
+            ('nested_lines', '<div><span style="display:block">Personal</span><span style="display:block">account</span></div>', True),
+            ('hidden', '<div hidden>Personal account</div>', False),
+            ('hidden_ancestor', '<div style="display:none"><span>Personal account</span></div>', False),
+            ('transparent_ancestor', '<main><div style="opacity:0"><span>Personal account</span></div></main>', False),
+            ('invisible_ancestor', '<div style="visibility:hidden"><span>Personal account</span></div>', False),
+            ('partly_hidden_label', '<div><span style="opacity:0">Personal</span><span> account</span></div>', False),
+            ('business', '<div>Business account</div>', False),
+            ('partial', '<div>Not a Personal account</div>', False),
+            ('missing', '<div>Loading workspace</div>', False),
+        ]
+        with auto_login.sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=True)
+            page = browser.new_page()
+            try:
+                for name, html, expected in cases:
+                    with self.subTest(name=name):
+                        page.set_content(html)
+                        self.assertEqual(verify_personal_account_label(page, timeout=350), expected)
+                page.set_content('<div id="caption">Loading workspace</div>')
+                page.evaluate("setTimeout(() => document.getElementById('caption').textContent = 'Personal\\u00a0account', 400)")
+                self.assertTrue(verify_personal_account_label(page, timeout=1500))
+            finally:
+                browser.close()
+
     def test_accepts_exact_personal_account_label_in_a_visible_div(self):
         playwright = auto_login.sync_playwright().start()
         browser = playwright.chromium.launch(headless=True)
@@ -468,6 +497,30 @@ class BrowserControlTests(unittest.TestCase):
             "bounds": calculate_window_bounds(2, 2, 2048, 1152),
         })
 
+    def test_show_all_command_tiles_every_open_browser(self):
+        first_commands = queue.Queue()
+        second_commands = queue.Queue()
+        auto_login._kept_browser_sessions.update({
+            "first": {"index": 1, "commands": first_commands},
+            "second": {"index": 2, "commands": second_commands},
+        })
+
+        queued = queue_browser_control_command(
+            "show_all",
+            screen_width=2048,
+            screen_height=1152,
+        )
+
+        self.assertEqual(queued, 2)
+        self.assertEqual(first_commands.get_nowait(), {
+            "action": "show_all",
+            "bounds": calculate_window_bounds(1, 2, 2048, 1152),
+        })
+        self.assertEqual(second_commands.get_nowait(), {
+            "action": "show_all",
+            "bounds": calculate_window_bounds(2, 2, 2048, 1152),
+        })
+
     def test_rearrange_large_batch_reuses_readable_worker_slots(self):
         command_queues = []
         for index in range(1, 16):
@@ -519,6 +572,18 @@ class BrowserControlTests(unittest.TestCase):
         link_page.set_viewport_size.assert_not_called()
         apply_bounds.assert_called_once_with(context, page, bounds)
 
+    def test_browser_owner_shows_all_command_before_bringing_window_forward(self):
+        page = mock.Mock()
+        context = mock.Mock()
+        entry = {"email": "safe@example.com", "index": 1, "context": context, "page": page}
+        bounds = {"left": 10, "top": 44, "width": 1009, "height": 196}
+
+        with mock.patch.object(auto_login, "apply_browser_window_bounds", return_value=True) as apply_bounds:
+            self.assertTrue(execute_browser_control_command(entry, {"action": "show_all", "bounds": bounds}))
+
+        page.bring_to_front.assert_called_once()
+        apply_bounds.assert_called_once_with(context, page, bounds)
+
 
 class WebLoginQueueTests(unittest.TestCase):
     def test_large_account_list_uses_stable_account_layout_slots(self):
@@ -540,6 +605,7 @@ class WebLoginQueueTests(unittest.TestCase):
             layout_total=None,
             reload_after=None,
             codex_web=False,
+            browser_id='auto',
             desktop_auth_url=None,
         ):
             with lock:

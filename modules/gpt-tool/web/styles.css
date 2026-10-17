@@ -79,8 +79,8 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
 .helper-row b { color: var(--accent); font-family: var(--mono); font-weight: 500; }
 .secure-label { color: var(--muted); font-family: var(--mono); font-size: 12px; letter-spacing: 0.07em; text-transform: uppercase; white-space: nowrap; }
 .secure-label span { color: var(--accent); }
-.format-confirmation { display: flex; align-items: center; gap: 9px; width: fit-content; margin-top: 18px; padding: 9px 12px; border: 1px solid rgba(103, 214, 196, 0.28); border-radius: 8px; background: rgba(103, 214, 196, 0.08); color: var(--muted-strong); font-size: 14px; font-weight: 600; }
-.format-check { display: grid; width: 20px; height: 20px; flex: 0 0 20px; place-items: center; border-radius: 5px; background: var(--accent); color: var(--accent-ink); font-size: 14px; }
+.format-confirmation { display: flex; align-items: center; gap: 9px; width: fit-content; margin-top: 18px; padding: 9px 12px; border: 1px solid rgba(103, 214, 196, 0.28); border-radius: 8px; background: rgba(103, 214, 196, 0.08); color: var(--muted-strong); font-size: 14px; font-weight: 600; cursor: pointer; }
+.format-confirmation input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); cursor: pointer; }
 .field { display: grid; gap: 8px; }
 .field label span { color: var(--muted); font-weight: 400; }
 input[type="text"], input[type="number"] { min-height: 50px; padding: 13px 14px; }

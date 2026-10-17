@@ -232,7 +232,9 @@ class PasskeyJobManager:
 
     def _safe_service_log(self, job: PasskeyJob, message: str) -> None:
         """Keep login diagnostics to fixed, credential-free milestones."""
-        if str(message).startswith(("[auth]", "[login]")):
+        if message == "[auth] Đã chọn Personal account":
+            self._append_log(job, "[auth] Đã chọn Personal account")
+        elif str(message).startswith(("[auth]", "[login]")):
             self._append_log(job, "[auth] Đăng nhập tạm thời chưa thành công; đang thử lại...")
 
     async def _run(self, job: PasskeyJob) -> None:

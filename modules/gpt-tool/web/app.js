@@ -39,6 +39,7 @@ function savePrefs() {
       format: fmt,
       proxy: document.getElementById("proxy").value,
       workers: clampWorkers(document.getElementById("workers").value),
+      autoImport: document.getElementById("auto-import").checked,
     })
   );
 }
@@ -61,7 +62,9 @@ const defaultFormat = FORMATS.some(([id]) => id === prefs.format) ? prefs.format
 document.querySelector(`input[name="fmt"][value="${defaultFormat}"]`).checked = true;
 if (prefs.proxy) document.getElementById("proxy").value = prefs.proxy;
 document.getElementById("workers").value = clampWorkers(prefs.workers ?? document.getElementById("workers").value);
+document.getElementById("auto-import").checked = prefs.autoImport !== false;
 updateFormatConfirmation();
+document.getElementById("auto-import").addEventListener("change", savePrefs);
 document.getElementById("formats").addEventListener("change", () => {
   updateFormatConfirmation();
   savePrefs();
@@ -79,6 +82,9 @@ function selectedFormat() {
 
 function updateFormatConfirmation() {
   document.getElementById("format-confirmation-text").textContent = FORMAT_CONFIRMATION[selectedFormat()] || "";
+  const supportsImport = selectedFormat() === "cockpit" || selectedFormat() === "9router";
+  document.getElementById("format-confirmation").hidden = !supportsImport;
+  document.getElementById("auto-import-help").hidden = !supportsImport;
 }
 
 const rows = new Map();
@@ -273,6 +279,7 @@ document.getElementById("run-export").addEventListener("click", async () => {
     return;
   }
   savePrefs();
+  const importEnabled = document.getElementById("auto-import").checked;
   currentJobId = null;
   setRunButton(true);
   seedRows(document.getElementById("lines").value);
@@ -286,8 +293,8 @@ document.getElementById("run-export").addEventListener("click", async () => {
       lines: document.getElementById("lines").value,
       proxy: document.getElementById("proxy").value,
       workers: clampWorkers(document.getElementById("workers").value),
-      cockpit_import: format === "cockpit",
-      nine_router_import: format === "9router",
+      cockpit_import: format === "cockpit" && importEnabled,
+      nine_router_import: format === "9router" && importEnabled,
     }),
   });
   const data = await res.json();

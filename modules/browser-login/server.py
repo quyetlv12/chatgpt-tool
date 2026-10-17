@@ -16,6 +16,7 @@ import webbrowser
 import threading
 import time
 import socketserver
+from browser_options import available_browsers, browser_launch_options
 from datetime import datetime, timezone
 from http.server import HTTPServer, SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs, urlencode
@@ -113,7 +114,7 @@ def resolve_web_login_link(payload):
 
 
 def resolve_web_login_reload(payload):
-    """Return an optional one-shot delay; missing settings never enable reload."""
+    """Return an optional reload delay; missing settings never enable reload."""
     enabled = payload.get("reloadEnabled", False)
     if not isinstance(enabled, bool):
         raise ValueError("reloadEnabled phải là true hoặc false")
@@ -786,6 +787,30 @@ def _utc_timestamp():
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+def _safe_workspace_result(result):
+    def account_id(value):
+        try:
+            return str(uuid.UUID(str(value)))
+        except (ValueError, TypeError, AttributeError):
+            return ""
+    error = result.get("workspaceCheckError") or ""
+    if not isinstance(error, str):
+        error = "unsupported_response"
+    required = result.get("workspaceCheckRequired") is True
+    target = account_id(result.get("workspaceId"))
+    return {
+        "workspaceCheckRequired": required,
+        "workspaceVerified": required and bool(target) and not error and result.get("workspaceVerified") is True,
+        "workspaceId": target,
+        "activeWorkspaceId": account_id(result.get("activeWorkspaceId")),
+        "workspaceCheckError": error if error in {
+            "", "invalid_invite", "wrong_origin", "identity_mismatch", "session_unavailable",
+            "access_denied", "rate_limited", "request_failed", "unsupported_response",
+            "workspace_unavailable", "not_joined",
+        } else "unsupported_response",
+    }
+
+
 def _safe_web_login_result(result):
     return {
         "runId": str(result.get("runId") or "")[:80],
@@ -796,6 +821,7 @@ def _safe_web_login_result(result):
         "linkOpened": bool(result.get("linkOpened")),
         "chatgptReloaded": bool(result.get("chatgptReloaded")),
         "personalAccountVerified": bool(result.get("personalAccountVerified")),
+        **_safe_workspace_result(result),
         "postLoginError": str(result.get("postLoginError") or "")[:80],
         "codexOpened": bool(result.get("codexOpened")),
         "error": str(result.get("error") or "")[:500],
@@ -923,6 +949,7 @@ def record_web_login_history(result):
         "linkOpened": bool(result.get("linkOpened")),
         "chatgptReloaded": bool(result.get("chatgptReloaded")),
         "personalAccountVerified": bool(result.get("personalAccountVerified")),
+        **_safe_workspace_result(result),
         "postLoginError": str(result.get("postLoginError") or "")[:80],
     }
     with _web_login_history_lock:
@@ -988,7 +1015,7 @@ def build_auto_login_command(accounts_file, workers):
     ]
 
 
-def build_web_login_command(accounts_file, workers, link_url="", reload_after=None, codex_web=False):
+def build_web_login_command(accounts_file, workers, link_url="", reload_after=None, codex_web=False, browser_id="auto"):
     """Build direct web-login arguments, omitting the secondary-tab flag when disabled."""
     args = build_auto_login_command(accounts_file, workers)
     args.extend(["--headed", "--web-only"])
@@ -998,6 +1025,8 @@ def build_web_login_command(accounts_file, workers, link_url="", reload_after=No
         args.extend(["--open-link", link_url])
     if reload_after is not None:
         args.extend(["--reload-after", str(reload_after)])
+    if browser_id != "auto":
+        args.extend(["--browser", browser_id])
     return args
 
 
@@ -1195,7 +1224,7 @@ def start_auto_login(accounts, headed=True, workers=3):
     thread.start()
 
 
-def _web_login_worker(accounts, workers=3, link_url="", run_id=None, reload_after=None, codex_web=False):
+def _web_login_worker(accounts, workers=3, link_url="", run_id=None, reload_after=None, codex_web=False, browser_id="auto"):
     """Run direct ChatGPT web login independently from Codex OAuth/import."""
     global _web_login_status, _web_login_proc
     import subprocess
@@ -1226,7 +1255,7 @@ def _web_login_worker(accounts, workers=3, link_url="", run_id=None, reload_afte
         "Bắt đầu phiên với {} tài khoản, tối đa {} luồng".format(len(accounts), active_workers),
         status=status,
     )
-    args = build_web_login_command(tmp_file, workers, link_url, reload_after=reload_after, codex_web=codex_web)
+    args = build_web_login_command(tmp_file, workers, link_url, reload_after=reload_after, codex_web=codex_web, browser_id=browser_id)
     try:
         env = os.environ.copy()
         env["PYTHONIOENCODING"] = "utf-8"
@@ -1321,9 +1350,9 @@ def _web_login_worker(accounts, workers=3, link_url="", run_id=None, reload_afte
                 )
             elif kind == "PHASE" and email:
                 phase_stage = metadata.get("stage", "")
-                if phase_stage == "personal_account_verified":
+                if phase_stage in ("personal_account_verified", "workspace_verified"):
                     phase_level = "success"
-                elif phase_stage in ("manual_check", "link_error", "reload_error", "personal_account_unverified"):
+                elif phase_stage in ("manual_check", "link_error", "reload_error", "personal_account_unverified", "workspace_unverified"):
                     phase_level = "warning"
                 else:
                     phase_level = "info"
@@ -1374,6 +1403,13 @@ def _web_login_worker(accounts, workers=3, link_url="", run_id=None, reload_afte
                     "linkUrl": link_by_email.get(email, status.get("linkUrl", "")),
                     "chatgptReloaded": metadata.get("reloaded") == "yes" or reload_by_email.get(email, False),
                     "personalAccountVerified": metadata.get("personal") == "yes",
+                    **_safe_workspace_result({
+                        "workspaceCheckRequired": metadata.get("workspace_required") == "yes",
+                        "workspaceVerified": metadata.get("workspace") == "yes",
+                        "workspaceId": metadata.get("workspace_id"),
+                        "activeWorkspaceId": metadata.get("active_workspace_id"),
+                        "workspaceCheckError": metadata.get("workspace_error"),
+                    }),
                     "postLoginError": metadata.get("flow_error", ""),
                     "codexOpened": metadata.get("codex") == "yes",
                     "error": metadata.get("error", ""),
@@ -1392,6 +1428,17 @@ def _web_login_worker(accounts, workers=3, link_url="", run_id=None, reload_afte
                                          "Tab OAuth được giữ mở; bạn kiểm tra và hoàn tất xác thực" if terminal_status == "success" else "Chưa mở được phiên OAuth",
                                          email=email, stage=terminal_status, status=status)
                     continue
+                if result["workspaceCheckRequired"]:
+                    verified = terminal_status == "success" and result["workspaceVerified"] and not result["postLoginError"]
+                    active = result["activeWorkspaceId"]
+                    active_label = ("workspace đích" if active == result["workspaceId"] else "workspace khác") if active else "chưa xác minh"
+                    append_web_login_log(
+                        "success" if verified else "warning" if terminal_status == "success" else "error",
+                        ("Đã xác minh quyền truy cập workspace đích" if verified else "Chưa xác minh workspace đích")
+                        + " · Workspace đang dùng: " + active_label,
+                        email=email, stage=terminal_status, status=status,
+                    )
+                    continue
                 append_web_login_log(
                     (
                         "success"
@@ -1407,6 +1454,7 @@ def _web_login_worker(accounts, workers=3, link_url="", run_id=None, reload_afte
                                 "link_error": "tab phụ chưa tải xong",
                                 "main_tab_error": "không quay lại được tab chính",
                                 "reload_error": "reload tab chính thất bại",
+                                "tabs_closed": "đã dừng kiểm tra vì tab hoặc Chrome đã đóng",
                                 "cancelled": "đã dừng trước khi kiểm tra Personal account",
                             }.get(result.get("postLoginError"), "Chưa xác minh Personal account"))
                             if terminal_status == "success"
@@ -1486,8 +1534,10 @@ def finalize_web_login_status(status, proc=None):
     return is_current
 
 
-def start_web_login(accounts, workers=3, link_url="", reload_after=None, codex_web=False):
+def start_web_login(accounts, workers=3, link_url="", reload_after=None, codex_web=False, browser_id="auto"):
     global _web_login_status
+    if not codex_web:
+        browser_launch_options(browser_id)
     if not accounts or workers < 1 or (codex_web and workers > 10):
         raise ValueError("Số luồng Codex phải từ 1 đến 10" if codex_web else "Số luồng phải lớn hơn 0")
     with _web_login_lock:
@@ -1499,14 +1549,14 @@ def start_web_login(accounts, workers=3, link_url="", reload_after=None, codex_w
         status = _web_login_status
     persist_web_login_status(status, current_only=True)
     thread = threading.Thread(target=_web_login_worker, args=(accounts, workers, link_url, run_id),
-                              kwargs={"reload_after": reload_after, "codex_web": codex_web}, daemon=True)
+                              kwargs={"reload_after": reload_after, "codex_web": codex_web, "browser_id": browser_id}, daemon=True)
     thread.start()
     return True
 
 
 def send_web_login_control(action, index=None, expected_target=None):
     """Send one validated browser command to the active automation process."""
-    if action not in ("focus", "rearrange"):
+    if action not in ("focus", "rearrange", "show_all"):
         raise ValueError("Unsupported browser control action")
     command = {"action": action}
     if action == "focus":
@@ -1905,6 +1955,9 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         p = urlparse(self.path).path
+        if p == "/api/web-login/browsers":
+            self._json({"browsers": available_browsers()})
+            return
         if p == "/api/health":
             self._json({
                 "ok": True,
@@ -2077,10 +2130,14 @@ class Handler(SimpleHTTPRequestHandler):
                 try:
                     link_url = "" if codex_web else resolve_web_login_link(data)
                     reload_after = None if codex_web else resolve_web_login_reload(data)
+                    browser_id = "auto" if codex_web else data.get("browser", "auto")
+                    if not codex_web:
+                        browser_launch_options(browser_id)
                 except ValueError as error:
                     self._json({"error": str(error)}, 400)
                     return
-                if not start_web_login(accounts, workers=workers, link_url=link_url, reload_after=reload_after, codex_web=codex_web):
+                if not start_web_login(accounts, workers=workers, link_url=link_url, reload_after=reload_after, codex_web=codex_web,
+                                       **({} if codex_web else {"browser_id": browser_id})):
                     self._json({"error": "Đang có phiên ChatGPT Web hoặc Codex Web; không thay thế phiên đang mở"}, 409)
                     return
                 with _web_login_lock:
@@ -2118,6 +2175,17 @@ class Handler(SimpleHTTPRequestHandler):
                 self._json({"ok": True, "index": index})
             except (ValueError, TypeError, json.JSONDecodeError) as error:
                 self._json({"error": str(error)}, 400)
+            return
+        if p == "/api/web-login/show":
+            if not send_web_login_control("show_all", expected_target="chatgpt"):
+                self._json({"error": "Browser sessions are not available"}, 409)
+                return
+            append_web_login_log(
+                "info",
+                "Đang hiển thị toàn bộ cửa sổ ChatGPT đang chạy",
+                stage="window_show_all_requested",
+            )
+            self._json({"ok": True})
             return
         if p == "/api/web-login/rearrange":
             if not send_web_login_control("rearrange", expected_target="chatgpt"):

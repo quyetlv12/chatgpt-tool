@@ -33,7 +33,8 @@
             <div class="field-heading"><label for="lines">Danh sách tài khoản</label><span>email | password | totp</span></div>
             <textarea id="lines" placeholder="user@example.com | password | JBSWY3DPEHPK3PXP" spellcheck="false"></textarea>
             <div class="helper-row"><span>Khoảng trắng quanh dấu <b>|</b> được tự động xử lý.</span><span class="secure-label"><span aria-hidden="true">●</span> local only</span></div>
-            <div class="format-confirmation" id="format-confirmation" role="status" aria-live="polite"><span class="format-check" aria-hidden="true">✓</span><span id="format-confirmation-text"></span></div>
+            <label class="format-confirmation" id="format-confirmation"><input type="checkbox" id="auto-import" checked aria-describedby="auto-import-help"><span id="format-confirmation-text"></span></label>
+            <p class="helper-row" id="auto-import-help">Bỏ chọn để chỉ xuất JSON, không tự mở hoặc nhập vào tool đích.</p>
             <div class="action-row"><button type="button" class="primary" id="run-export"><svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m6 3 14 9-14 9Z"></path></svg>Chạy tool</button><button type="button" class="ghost" id="open-out"><svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.7-.9l-.8-1.2A2 2 0 0 0 7.9 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"></path></svg>Mở file hệ thống</button></div>
           </div>
 

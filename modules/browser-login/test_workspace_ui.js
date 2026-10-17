@@ -1,0 +1,23 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const html = fs.readFileSync(`${__dirname}/index.html`, 'utf8');
+const start = html.indexOf('      function webResultVerified(');
+const end = html.indexOf('      function renderWebLoginHistory()', start);
+const context = vm.createContext({});
+vm.runInContext(html.slice(start, end), context);
+const base = {status: 'success', personalAccountVerified: true, workspaceCheckRequired: true,
+  workspaceId: 'synthetic-workspace', workspaceVerified: false};
+assert.equal(context.webResultVerified(base), false, 'Personal must not verify workspace');
+assert.match(context.webVerificationLabel(base), /Chưa xác minh workspace đích/);
+assert.equal(context.webResultVerified({...base, workspaceVerified: true}), true);
+assert.match(context.webVerificationLabel({...base, workspaceVerified: true}), /Workspace đang dùng: chưa xác minh/);
+assert.match(context.webVerificationLabel({...base, workspaceVerified: true, activeWorkspaceId: 'other'}), /Workspace đang dùng: workspace khác/);
+assert.match(context.webVerificationLabel({...base, workspaceVerified: true, activeWorkspaceId: base.workspaceId}), /Workspace đang dùng: workspace đích/);
+assert.equal(context.webResultVerified({...base, workspaceVerified: true, postLoginError: 'cancelled'}), false);
+assert.equal(context.webResultVerified({status: 'success', personalAccountVerified: true}), true, 'legacy ordinary flow unchanged');
+assert.match(context.webVerificationLabel({...base, workspaceCheckError: 'rate_limited'}), /giới hạn lượt kiểm tra/);
+assert.equal(context.webResultVerified({...base, workspaceCheckError: 'workspace_unavailable', postLoginError: 'workspace_check_failed'}), false);
+assert.match(context.webVerificationLabel({...base, workspaceCheckError: 'workspace_unavailable'}), /workspace không hoạt động/);
+assert.match(html, /id="web-login-reload-help">Mặc định tắt\. Chỉ áp dụng cho lần chạy này\./);
+console.log('Workspace UI: membership and active workspace are separate; legacy, warning and cancellation passed');

@@ -1,6 +1,6 @@
 # Shoptaikhoan Tool — Complete Application Flow
 
-Last code trace: 2026-10-06
+Last code trace: 2026-10-07
 
 Scope: Community Source v1.0.0, the FastAPI localhost application, its vanilla JavaScript dashboard, SQLite state, pure-request account operations, launchers, and macOS packaging.
 
@@ -687,12 +687,48 @@ The protocol:
 6. Generate a Sentinel token using the downloaded JavaScript SDK through bundled Node/QuickJS; use Python PoW fallback when needed.
 7. Resolve the account flow and submit password verification.
 8. When MFA is required, request a challenge, generate the current six-digit TOTP, and verify it.
-9. Follow redirects and consume the NextAuth callback.
+9. If the official `/workspace` gate appears after password/TOTP or within the callback redirect chain, select the single available `kind=personal` workspace, then continue the same OAuth state. Ordinary accounts skip selection entirely. Follow redirects and consume the NextAuth callback.
 10. Require a session-token cookie.
 11. GET /api/auth/session and require a non-empty accessToken.
 12. Export cookies as __cookies for entitlement, Usage, saved payment-method, and MFA calls.
 
 The HTTP client supplies TLS fingerprinting, User-Agent and Client Hints, fetch metadata, Origin, Referer, trace headers, cookies, and Sentinel data. It reproduces the network protocol but never renders a remote page.
+
+Personal workspace selection reads only the first Base64URL segment of the
+auth-host `oai-client-auth-session` cookie, matching the official client's
+`header=true` decoder. If that cookie is absent, it retrieves
+`client_auth_session.workspaces` with one authenticated, non-redirecting GET
+to `/api/accounts/client_auth_session_dump`, using the same HTTP session.
+Malformed or ambiguous cookies do not trigger a fallback. Ordinary accounts
+and valid-cookie picker flows never call the dump endpoint.
+It sends one `/api/accounts/workspace/select` request
+with the exact personal workspace ID and follows only an official initial
+continuation. Missing, disabled, ambiguous or malformed personal entries,
+selection errors and repeated workspace gates fail closed; the first EDU/Business
+entry is never used as a fallback. Cookie contents, session dumps, workspace IDs
+and upstream selection response bodies are not logged. Selection is not login success:
+the existing session-cookie and `/api/auth/session` access-token checks still
+apply. All Community callers reuse this pure-request login, including checks,
+post-rotation verification and password/passkey reauthentication; their queues,
+mutations, persistence and retry contracts are unchanged.
+
+Protocol reference checked without an account on 2026-10-07: the official
+workspace route [route-DlTjAYEs.js](https://auth-cdn.oaistatic.com/assets/route-DlTjAYEs.js)
+uses `workspaces[].kind` (`personal` or `organization`) and submits
+`{"workspace_id": id}` to `/api/accounts/workspace/select`.
+The cookie decoder and authenticated GET session-dump fallback are in
+[client-auth-session-DOo-afj7.js](https://auth-cdn.oaistatic.com/assets/client-auth-session-DOo-afj7.js);
+[entry.client-Dhj5412H.js](https://auth-cdn.oaistatic.com/assets/entry.client-Dhj5412H.js)
+defines the official `https://auth.openai.com/api/accounts` base URL.
+Authorized live read-only verification on 2026-10-07 exercised a missing-cookie
+multi-workspace account: password and TOTP verification, session dump HTTP 200,
+one available Personal selection, callback/session-cookie verification, and a
+nonempty access token all succeeded. `TwoFAService.check()` returned Live and
+the unchanged TOTP secret. Usage was unavailable for the returned Free plan;
+payment inspection was disabled. No rotation, password change, passkey enrollment,
+logout, job enqueue or account persistence was performed. Ordinary-account
+non-interference and failure boundaries are covered by synthetic tests, not a
+second live account.
 
 Passwordless email-OTP accounts need a mail provider. The Community service passes no mail provider, so that branch cannot complete.
 
@@ -902,6 +938,15 @@ Passkey UI and manager:
 9. Pure-request login runs in a thread, which asyncio cancellation cannot stop. On deadline/cancellation, preparation waits for that single login to settle before releasing the account lock and never requests an enrollment token afterward. Cleanup can exceed the preparation budget; the UI deadline still releases the dialog controls without declaring the account idle.
 
 Bulk passkey page:
+
+Bulk preparation uses `TwoFAService.prepare_passkey()` and the same
+`get_session_pure_request()` login as checks/rotation. A workspace gate selects
+only the available Personal account (cookie or authenticated session-dump
+fallback) before session verification and the MFA-token handoff request.
+The queue exposes only the fixed `[auth] Đã chọn Personal account` milestone,
+never workspace IDs or raw login diagnostics. Ordinary accounts skip picker
+requests. Unavailable Personal or failed session verification produces an error
+without requesting or issuing a passkey handoff; organization fallback is forbidden.
 
 1. `/passkey` renders a dedicated full-width page rather than a modal. It accepts `email|password|2FA` lines and uses the configured 2FA concurrency and timeout values for its RAM-only workers. The input/output panes and queue receive independent, taller scroll areas so the operator can inspect more data at once.
 2. After each account's official handoff is ready, requests a native Chrome window (`native_window=true`). Every submitted record snapshots its 1-based window position and the deduplicated batch size. `PasskeyWindows` starts the Google Chrome executable directly with a unique temporary profile plus `--new-window`, `--window-position`, and `--window-size`; before launch it writes only Chromium's registered `webauthn.create_in_icloud_keychain=true` preference to that profile. On supported macOS/Chrome versions, a compatible creation request therefore goes directly to the native Passwords/iCloud Keychain prompt. This matches ChatGPT Web's independent-browser behavior and does not require macOS Automation/Apple Events permission. All accounts in one submitted batch therefore receive separate, pre-tiled Chrome processes. No existing Chrome or default-browser tab is reused, moved, or closed. The temporary profile is removed after the operator closes that Chrome process. If Chrome is missing, profile preparation fails, launch fails, or the platform is unsupported, the dashboard retains a one-use manual fallback link valid for two minutes. Suite mode uses `twofa.localhost:<configured hub port>`; standalone mode uses its configured loopback host/port. Neither arbitrary URLs nor commands can be submitted to the native launcher.
@@ -1227,6 +1272,8 @@ password feature tests.
 | tests/test_delete_all_chats.py | HTTP contract, confirmation/auth, RAM-only lock, non-interference, safe errors |
 | tests/test_payment_methods_feature.py | Safe payment parsing/fetching, fail-soft service behavior, persistence |
 | tests/test_inspection_options.py | Default/snapshot/recovery semantics and zero upstream calls when disabled |
+| tests/test_personal_workspace_login.py | Synthetic full HTTP login: password/TOTP and direct/redirect/reauthorize workspace gates; cookie and missing-cookie session-dump selection, normal-account non-interference, safe failure and session-token verification |
+| tests/test_passkey_workspace_login.py | Synthetic full bulk queue through shared HTTP login and official MFA-token request: workspace cookie/dump, mixed concurrent ordinary/Personal batch, fixed private-safe logs, blocked handoffs and one-use launch |
 | tests/test_worker_resilience.py | Worker recovery, health, persistence failure containment |
 | tests/test_usage_ui.js | Usage formatting and filter/export metadata |
 | tests/test_payment_ui.js | Safe payment formatting, table wiring, loading/empty/unavailable states |

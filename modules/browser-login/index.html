@@ -856,6 +856,7 @@
     }
 
     textarea,
+    #web-login-browser-select,
     input[type="url"],
     input[type="number"],
     input[type="text"] {
@@ -874,6 +875,7 @@
     }
 
     textarea:focus,
+    #web-login-browser-select:focus,
     input[type="url"]:focus,
     input[type="number"]:focus,
     input[type="text"]:focus {
@@ -977,6 +979,32 @@
 
     .feature-toggle input:focus-visible + .toggle-track {
       box-shadow: var(--shadow-focus);
+    }
+
+    #web-login-reload-dialog .feature-toggle {
+      min-height: 44px;
+      gap: 10px;
+      font-size: 13px;
+    }
+
+    #web-login-reload-dialog .toggle-track {
+      width: 56px;
+      height: 32px;
+    }
+
+    #web-login-reload-dialog .toggle-track::after {
+      top: 4px;
+      left: 4px;
+      width: 22px;
+      height: 22px;
+    }
+
+    #web-login-reload-dialog input:checked + .toggle-track::after {
+      transform: translateX(24px);
+    }
+
+    #web-login-reload-dialog .modal-footer {
+      justify-content: center;
     }
 
     .field-help {
@@ -1689,6 +1717,22 @@
       transform: translateY(0) scale(1);
     }
 
+    dialog.modal {
+      width: min(680px, calc(100% - 32px));
+      margin: auto;
+      padding: 0;
+      color: var(--text);
+      transform: none;
+    }
+
+    dialog.modal:not([open]) {
+      display: none;
+    }
+
+    dialog.modal::backdrop {
+      background: rgba(10, 12, 18, 0.7);
+    }
+
     .modal-header {
       display: flex;
       align-items: center;
@@ -1896,7 +1940,7 @@
         <div class="page-heading">
           <div class="page-kicker">
             <div class="page-icon" aria-hidden="true">◎</div>
-            <div><h2>ChatGPT Web</h2><p>Đăng nhập trực tiếp trên web, giữ nguyên từng cửa sổ Chrome.</p></div>
+            <div><h2>ChatGPT Web</h2><p>Đăng nhập trên trình duyệt đã chọn, giữ từng cửa sổ ẩn danh.</p></div>
           </div>
           <div class="heading-actions">
             <button class="btn-history" id="btn-open-history" type="button"><span class="history-dot"></span>Lịch sử tài khoản</button>
@@ -2189,6 +2233,13 @@
       <div class="workflow-grid web-login-workflow-grid">
         <div class="control-stack">
           <div class="control-card">
+            <label class="field-label" for="web-login-browser-select">Trình duyệt trên máy</label>
+            <select id="web-login-browser-select" disabled aria-describedby="web-login-browser-help">
+              <option value="auto">Đang tìm trình duyệt...</option>
+            </select>
+            <div class="field-help" id="web-login-browser-help" role="status">Mỗi tài khoản mở trong cửa sổ ẩn danh riêng. Tab phụ dùng chung phiên; giữ cửa sổ sau khi đăng nhập.</div>
+          </div>
+          <div class="control-card">
             <div class="section-label">Danh sách tài khoản <span class="section-hint">email|password|2fa</span></div>
             <textarea id="web-login-accounts-input" spellcheck="false" placeholder="email|password|2fa_secret&#10;user2@gmail.com|password123|&#10;# Mỗi dòng một tài khoản"></textarea>
             <div class="field-label-row">
@@ -2201,27 +2252,13 @@
             </div>
             <textarea id="web-login-link-input" rows="2" spellcheck="false" placeholder="https://chatgpt.com/api/auth/session">https://chatgpt.com/api/auth/session</textarea>
             <div class="field-help" id="web-login-link-help">Sau khi đăng nhập, mở URL này trong tab phụ cùng browser.</div>
-            <div class="field-label-row">
-              <label class="field-label" for="web-login-reload-toggle">Tự động reload tab ChatGPT</label>
-              <label class="feature-toggle" for="web-login-reload-toggle">
-                <input type="checkbox" id="web-login-reload-toggle" aria-label="Bật hoặc tắt tự động reload tab ChatGPT" />
-                <span class="toggle-track" aria-hidden="true"></span>
-                <span id="web-login-reload-toggle-text">Tắt</span>
-              </label>
-            </div>
-            <div class="config-input-row">
-              <label for="web-login-reload-seconds">Chờ</label>
-              <input id="web-login-reload-seconds" type="number" min="1" max="3600" step="1" value="10" disabled inputmode="numeric" aria-describedby="web-login-reload-help" style="width:90px;padding:8px 10px;text-align:center;font-family:var(--mono)" />
-              <span class="config-hint">giây sau đăng nhập</span>
-            </div>
-            <div class="field-help" id="web-login-reload-help">Mặc định tắt. Khi bật, reload tab chính một lần rồi giữ mở; không chuyển focus. Áp dụng cho lần chạy mới.</div>
           </div>
           <div class="config-row">
             <div class="config-item">
               <label class="config-label">Cửa sổ song song</label>
               <div class="config-input-row">
                 <input id="web-login-workers-input" type="number" min="1" step="1" value="3" inputmode="numeric" aria-label="Số cửa sổ ChatGPT Web" style="width:72px;padding:8px 10px;text-align:center;font-family:var(--mono);font-size:1.1rem;font-weight:700" />
-                <span class="config-hint">Chrome cùng lúc</span>
+                <span class="config-hint">cửa sổ cùng lúc</span>
               </div>
             </div>
             <div class="config-item config-item--check">
@@ -2254,7 +2291,10 @@
           <div class="panel table-card">
             <div class="panel-head panel-head-row">
               <div><h2>Kết quả phiên hiện tại</h2><p>Trạng thái từng browser được cập nhật theo thời gian thực.</p></div>
-              <button class="btn-compact" id="btn-web-rearrange" type="button" style="display:none">Sắp xếp lại tab</button>
+              <div class="panel-head-actions">
+                <button class="btn-compact" id="btn-web-show-running" type="button" style="display:none">Mở các tab đang chạy</button>
+                <button class="btn-compact" id="btn-web-rearrange" type="button" style="display:none">Sắp xếp lại tab</button>
+              </div>
             </div>
             <div class="panel-body"><div class="tbl-wrap"><table><thead><tr><th>#</th><th>Tài khoản</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody><tr><td colspan="4"><div id="web-login-history"><span class="empty-cell">Chưa có kết quả.</span></div></td></tr></tbody></table></div></div>
           </div>
@@ -2287,6 +2327,37 @@
       </div>
     </div>
   </main>
+
+  <dialog class="modal" id="web-login-reload-dialog" aria-labelledby="web-login-reload-title" aria-describedby="web-login-reload-help">
+    <form method="dialog">
+      <div class="modal-header">
+        <div>
+          <h3 id="web-login-reload-title">Tự động reload tab ChatGPT</h3>
+        </div>
+        <button class="modal-close" type="button" value="cancel" onclick="this.closest('dialog').close()" aria-label="Hủy lần chạy">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="field-label-row">
+          <label class="field-label" for="web-login-reload-toggle">Tự động reload</label>
+          <label class="feature-toggle" for="web-login-reload-toggle">
+            <input type="checkbox" id="web-login-reload-toggle" aria-label="Bật hoặc tắt tự động reload tab ChatGPT" autofocus />
+            <span class="toggle-track" aria-hidden="true"></span>
+            <span id="web-login-reload-toggle-text">Tắt</span>
+          </label>
+        </div>
+        <div class="config-input-row">
+          <label for="web-login-reload-seconds">Chờ</label>
+          <input id="web-login-reload-seconds" type="number" min="1" max="3600" step="1" value="10" required disabled inputmode="numeric" aria-describedby="web-login-reload-help" style="width:90px;padding:8px 10px;text-align:center;font-family:var(--mono)" />
+          <span class="config-hint">giây sau đăng nhập</span>
+        </div>
+        <div class="field-help" id="web-login-reload-help">Mặc định tắt. Chỉ áp dụng cho lần chạy này.</div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" type="button" value="cancel" onclick="this.closest('dialog').close()">Hủy</button>
+        <button class="btn btn-primary" value="start">Bắt đầu chạy</button>
+      </div>
+    </form>
+  </dialog>
 
   <!-- ============ HISTORY MODAL ============ -->
   <div class="modal-overlay" id="history-modal" role="dialog" aria-modal="true" aria-label="Lịch sử tài khoản">
@@ -3041,6 +3112,8 @@
       let webLoginPaused = false;
       let webBrowserControlsAvailable = false;
       const WEB_LOGIN_LINK_ENABLED_KEY = 'shoptaikhoan.webLoginLinkEnabled';
+      const WEB_LOGIN_BROWSER_KEY = 'shoptaikhoan.webLoginBrowser';
+      let webBrowsersReady = false;
       let webLinkEnabled = true;
 
       function syncWebLoginLinkToggle(persist = false) {
@@ -3066,6 +3139,31 @@
       syncWebLoginLinkToggle();
       $('web-login-link-toggle').addEventListener('change', () => syncWebLoginLinkToggle(true));
 
+      async function loadWebLoginBrowsers() {
+        const select = $('web-login-browser-select');
+        webBrowsersReady = false;
+        select.disabled = true;
+        try {
+          const response = await fetch(API + '/api/web-login/browsers');
+          const data = await response.json();
+          if (!response.ok || !Array.isArray(data.browsers) || !data.browsers.length) throw new Error();
+          select.replaceChildren(...data.browsers.map(browser => new Option(browser.name, browser.id)));
+          let saved = '';
+          try { saved = localStorage.getItem(WEB_LOGIN_BROWSER_KEY) || ''; } catch {}
+          const ids = data.browsers.map(browser => browser.id);
+          select.value = ids.includes(saved) ? saved : ids.includes('brave') ? 'brave' : 'auto';
+          select.disabled = false;
+          webBrowsersReady = true;
+          $('web-login-browser-help').textContent = 'Mỗi tài khoản mở trong cửa sổ ẩn danh riêng. Tab phụ dùng chung phiên; giữ cửa sổ sau khi đăng nhập.';
+        } catch {
+          $('web-login-browser-help').textContent = 'Không tải được danh sách trình duyệt. Hãy kiểm tra server hoặc cập nhật app rồi tải lại trang.';
+        }
+      }
+      $('web-login-browser-select').addEventListener('change', () => {
+        try { localStorage.setItem(WEB_LOGIN_BROWSER_KEY, $('web-login-browser-select').value); } catch {}
+      });
+      loadWebLoginBrowsers();
+
       function syncWebLoginReloadToggle() {
         const enabled = $('web-login-reload-toggle').checked;
         $('web-login-reload-seconds').disabled = !enabled;
@@ -3073,6 +3171,23 @@
       }
       syncWebLoginReloadToggle();
       $('web-login-reload-toggle').addEventListener('change', syncWebLoginReloadToggle);
+
+      function askWebLoginReloadSettings() {
+        const dialog = $('web-login-reload-dialog');
+        if (dialog.open) return Promise.resolve(null);
+        $('web-login-reload-toggle').checked = false;
+        syncWebLoginReloadToggle();
+        dialog.returnValue = '';
+        return new Promise(resolve => {
+          dialog.addEventListener('close', () => {
+            resolve(dialog.returnValue === 'start' ? {
+              reloadEnabled: $('web-login-reload-toggle').checked,
+              reloadSeconds: Number($('web-login-reload-seconds').value),
+            } : null);
+          }, { once: true });
+          dialog.showModal();
+        });
+      }
 
       function parseWebLoginAccounts() {
         const text = $('web-login-accounts-input').value.trim();
@@ -3089,7 +3204,7 @@
 
       function showWebLoginCancelState(message) {
         $('btn-web-login').disabled = true;
-        $('btn-web-login').textContent = 'Đang có phiên Chrome';
+        $('btn-web-login').textContent = 'Đang có phiên trình duyệt';
         $('btn-web-pause').style.display = 'none';
         $('btn-web-stop').style.display = '';
         $('btn-web-stop').disabled = false;
@@ -3123,6 +3238,8 @@
         $('btn-web-stop').style.display = 'none';
         $('btn-web-stop').disabled = false;
         $('btn-web-stop').textContent = 'Hủy phiên hiện tại';
+        $('btn-web-show-running').style.display = 'none';
+        $('btn-web-show-running').disabled = false;
         $('btn-web-rearrange').style.display = 'none';
         $('btn-web-rearrange').disabled = false;
         if (message) showMsg('web-login-msg', message, 'ok');
@@ -3148,32 +3265,28 @@
         const accounts = parseWebLoginAccounts();
         if (!accounts.length) { showMsg('web-login-msg', 'Chưa nhập tài khoản hợp lệ!', 'err'); return }
         if (!serverOnline) { showMsg('web-login-msg', 'Server offline!', 'err'); return }
+        if (!webBrowsersReady) { showMsg('web-login-msg', 'Chưa tải được danh sách trình duyệt; hãy tải lại trang.', 'err'); return }
+        const browser = $('web-login-browser-select').value;
         const workers = Number.parseInt($('web-login-workers-input').value, 10);
         if (!Number.isInteger(workers) || workers < 1) { showMsg('web-login-msg', 'Số cửa sổ phải là số nguyên lớn hơn 0.', 'err'); return }
         const linkSettings = {
           openLinkEnabled: webLinkEnabled,
           linkUrl: webLinkEnabled ? $('web-login-link-input').value.trim() : '',
         };
-        const reloadSettings = {
-          reloadEnabled: $('web-login-reload-toggle').checked,
-          reloadSeconds: Number($('web-login-reload-seconds').value),
-        };
-        if (reloadSettings.reloadEnabled && (!Number.isInteger(reloadSettings.reloadSeconds)
-          || reloadSettings.reloadSeconds < 1 || reloadSettings.reloadSeconds > 3600)) {
-          showMsg('web-login-msg', 'Thời gian reload phải là số nguyên từ 1 đến 3600 giây.', 'err');
-          return;
-        }
         if (linkSettings.openLinkEnabled && linkSettings.linkUrl) {
           try {
             const parsed = new URL(linkSettings.linkUrl);
             if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error();
           } catch { showMsg('web-login-msg', 'Link phải bắt đầu bằng http:// hoặc https://.', 'err'); return }
         }
+        const reloadSettings = await askWebLoginReloadSettings();
+        if (!reloadSettings) return;
         $('btn-web-login').disabled = true;
-        $('btn-web-login').textContent = '⏳ Đang mở Chrome...';
+        $('btn-web-login').textContent = 'Đang mở trình duyệt...';
         $('btn-web-pause').style.display = '';
         $('btn-web-pause').textContent = 'Tạm dừng';
         $('btn-web-stop').style.display = '';
+        $('btn-web-show-running').style.display = 'none';
         $('btn-web-rearrange').style.display = 'none';
         $('web-login-progress').style.display = 'block';
         $('web-login-progress-bar').style.width = '0%';
@@ -3189,7 +3302,7 @@
           const response = await fetch(API + '/api/web-login/start', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ accounts: accounts.map(account => account.raw), workers, ...linkSettings, ...reloadSettings }),
+            body: JSON.stringify({ accounts: accounts.map(account => account.raw), workers, browser, ...linkSettings, ...reloadSettings }),
           });
           const data = await response.json();
           if (response.status === 409) {
@@ -3271,7 +3384,7 @@
           const response = await fetch(API + '/api/web-login/rearrange', { method: 'POST' });
           const data = await response.json();
           if (!response.ok || !data.ok) throw new Error(data.error || 'Không thể sắp xếp cửa sổ');
-          showMsg('web-login-msg', 'Đã gửi lệnh sắp xếp lại toàn bộ cửa sổ Chrome.', 'ok');
+          showMsg('web-login-msg', 'Đã gửi lệnh sắp xếp lại toàn bộ cửa sổ trình duyệt.', 'ok');
         } catch (error) {
           showMsg('web-login-msg', '❌ ' + error.message, 'err');
         } finally {
@@ -3279,6 +3392,22 @@
         }
       }
 
+      async function showRunningWebLoginTabs() {
+        const button = $('btn-web-show-running');
+        button.disabled = true;
+        try {
+          const response = await fetch(API + '/api/web-login/show', { method: 'POST' });
+          const data = await response.json();
+          if (!response.ok || !data.ok) throw new Error(data.error || 'Không thể mở các tab đang chạy');
+          showMsg('web-login-msg', 'Đã hiển thị các tab ChatGPT đang chạy.', 'ok');
+        } catch (error) {
+          showMsg('web-login-msg', '❌ ' + error.message, 'err');
+        } finally {
+          button.disabled = false;
+        }
+      }
+
+      $('btn-web-show-running').addEventListener('click', showRunningWebLoginTabs);
       $('btn-web-rearrange').addEventListener('click', rearrangeWebLoginTabs);
 
       function startWebLoginPolling(total, expectedRunId = webLoginRunId) {
@@ -3313,6 +3442,7 @@
               $('btn-web-stop').textContent = 'Hủy phiên hiện tại';
             }
             $('btn-web-rearrange').style.display = webBrowserControlsAvailable ? '' : 'none';
+            $('btn-web-show-running').style.display = webBrowserControlsAvailable ? '' : 'none';
             webLoginHistory = Array.isArray(data.results) ? data.results : [];
             renderWebLoginHistory();
             if (!data.running && !data.webReady && (data.completed || data.stopped)) {
@@ -3323,6 +3453,7 @@
               $('btn-web-stop').style.display = 'none';
               $('btn-web-pause').style.display = 'none';
               $('btn-web-rearrange').style.display = 'none';
+              $('btn-web-show-running').style.display = 'none';
               const message = data.stopped
                 ? `Đã dừng: ${data.done || 0}/${total} thành công. Log và kết quả đã được lưu.`
                 : `Hoàn tất: ${data.done || 0} thành công, ${data.failed || 0} lỗi.`;
@@ -3342,6 +3473,35 @@
         }, 500);
       }
 
+      function webResultVerified(result) {
+        return result.status === 'success' && !result.postLoginError &&
+          (result.workspaceCheckRequired === true ? result.workspaceVerified === true : result.personalAccountVerified === true);
+      }
+
+      function webVerificationLabel(result) {
+        if (result.workspaceCheckRequired !== true) {
+          return result.personalAccountVerified === true ? 'Đã xác minh Personal account' : 'Chưa xác minh Personal account';
+        }
+        const errors = {
+          invalid_invite: 'link mời thiếu hoặc sai ID workspace',
+          identity_mismatch: 'phiên đăng nhập không khớp tài khoản',
+          wrong_origin: 'tab chính chưa ở ChatGPT',
+          session_unavailable: 'chưa đọc được phiên đăng nhập',
+          access_denied: 'backend từ chối quyền truy cập',
+          rate_limited: 'backend giới hạn lượt kiểm tra',
+          request_failed: 'chưa đọc được backend',
+          unsupported_response: 'backend trả dữ liệu chưa hỗ trợ',
+          workspace_unavailable: 'workspace không hoạt động',
+          not_joined: 'chưa có quyền truy cập workspace đích',
+        };
+        const membership = result.workspaceVerified === true
+          ? 'Đã xác minh quyền truy cập workspace đích'
+          : `Chưa xác minh workspace đích${errors[result.workspaceCheckError] ? ' · ' + errors[result.workspaceCheckError] : ''}`;
+        const active = result.activeWorkspaceId
+          ? (result.activeWorkspaceId === result.workspaceId ? 'workspace đích' : 'workspace khác') : 'chưa xác minh';
+        return `${membership} · Workspace đang dùng: ${active}`;
+      }
+
       function renderWebLoginHistory() {
         const element = $('web-login-history');
         if (!webLoginHistory.length) {
@@ -3350,21 +3510,23 @@
         }
         element.innerHTML = '<div style="font-size:.82rem;color:var(--muted);margin-bottom:6px">Kết quả đăng nhập web:</div>' + webLoginHistory.map(result => {
           const success = result.status === 'success';
-          const personalAccountVerified = success && result.personalAccountVerified === true;
+          const verified = webResultVerified(result);
           const resultIndex = Number.parseInt(result.index, 10);
-          const flowDetail = `${result.linkOpened ? 'tab phụ đã mở' : 'ChatGPT đang mở'}${result.chatgptReloaded ? ', tab chính đã reload một lần' : ''}`;
+          const flowDetail = `${result.linkOpened ? 'tab phụ đã mở' : 'ChatGPT đang mở'}${result.chatgptReloaded ? ', tab chính đã reload' : ''}`;
           const postLoginError = result.postLoginError || '';
           const flowErrorLabel = {
             link_error: 'tab phụ chưa tải xong',
             main_tab_error: 'không quay lại được tab chính',
             reload_error: 'reload tab chính thất bại',
-            cancelled: 'đã dừng trước khi kiểm tra Personal account',
+            tabs_closed: 'đã dừng kiểm tra vì tab hoặc Chrome đã đóng',
+            cancelled: 'đã dừng kiểm tra tài khoản',
+            workspace_check_failed: 'không thể tiếp tục xác minh workspace',
           }[postLoginError];
           const detail = success
-            ? `${flowErrorLabel || (personalAccountVerified ? 'Đã xác minh Personal account' : 'Chưa xác minh Personal account')} · ${flowDetail}`
+            ? `${flowErrorLabel ? flowErrorLabel + ' · ' : ''}${webVerificationLabel(result)} · ${flowDetail}`
             : (result.error || 'Login lỗi');
-          const statusClass = success ? (personalAccountVerified ? '' : 'warning') : 'error';
-          const statusIcon = success ? (personalAccountVerified ? '✅' : '⚠️') : '❌';
+          const statusClass = success ? (verified ? '' : 'warning') : 'error';
+          const statusIcon = success ? (verified ? '✅' : '⚠️') : '❌';
           const action = success && webBrowserControlsAvailable && Number.isInteger(resultIndex) && resultIndex > 0
             ? `<button class="btn-compact web-result-action" type="button" data-web-focus-index="${resultIndex}">Mở tab</button>`
             : '<span></span>';
@@ -3428,19 +3590,21 @@
         if (countEl) countEl.textContent = webAccountHistory.length + ' bản ghi';
         element.innerHTML = webAccountHistory.slice(0, 200).map(item => {
           const success = item.status === 'success';
-          const personalAccountVerified = success && item.personalAccountVerified === true;
+          const verified = webResultVerified(item);
           const date = new Date(item.finishedAt || item.startedAt || Date.now());
           const time = Number.isNaN(date.getTime()) ? '' : date.toLocaleString('vi-VN', { hour12: false });
           const duration = item.durationSeconds ? `${item.durationSeconds}s` : '—';
-          const statusClass = success ? (personalAccountVerified ? 'success' : 'warning') : 'error';
-          const statusIcon = success ? (personalAccountVerified ? '✅' : '⚠️') : '❌';
+          const statusClass = success ? (verified ? 'success' : 'warning') : 'error';
+          const statusIcon = success ? (verified ? '✅' : '⚠️') : '❌';
           const statusLabel = success
             ? ({
                 link_error: 'tab phụ chưa tải xong',
                 main_tab_error: 'không quay lại được tab chính',
                 reload_error: 'reload tab chính thất bại',
-                cancelled: 'đã dừng trước khi kiểm tra Personal account',
-              }[item.postLoginError] || (personalAccountVerified ? 'Đã xác minh Personal account' : 'Chưa xác minh Personal account'))
+                tabs_closed: 'đã dừng kiểm tra vì tab hoặc Chrome đã đóng',
+                cancelled: 'đã dừng kiểm tra tài khoản',
+                workspace_check_failed: 'không thể tiếp tục xác minh workspace',
+              }[item.postLoginError] || webVerificationLabel(item))
             : 'Lỗi';
           return `<div class="history-row"><span>${statusIcon}</span><span class="history-email" title="${esc(item.email || '')}">${esc(item.email || '')}</span><span class="history-status ${statusClass}">${esc(statusLabel)} · ${esc(duration)}</span><time>${esc(time)}</time></div>`;
         }).join('');
@@ -3480,6 +3644,7 @@
             $('btn-web-pause').style.display = data.running && !data.completed ? '' : 'none';
             $('btn-web-pause').textContent = webLoginPaused ? 'Tiếp tục' : 'Tạm dừng';
             $('btn-web-rearrange').style.display = webBrowserControlsAvailable ? '' : 'none';
+            $('btn-web-show-running').style.display = webBrowserControlsAvailable ? '' : 'none';
             startWebLoginPolling(
               data.total || Math.max(1, (data.done || 0) + (data.failed || 0)),
               webLoginRunId,
@@ -3583,7 +3748,7 @@
           document.querySelector('.page-kicker h2').textContent = btn.textContent;
           document.querySelector('.page-kicker p').textContent = btn.dataset.tab === 'codex-web'
             ? 'Tự xác thực OAuth Codex, sau đó giữ nguyên tab cho bạn thao tác. Không import 9Router.'
-            : btn.dataset.tab === 'web-login' ? 'Đăng nhập trực tiếp trên web, giữ nguyên từng cửa sổ Chrome.' : 'Chọn thao tác trong màn hình bên dưới.';
+            : btn.dataset.tab === 'web-login' ? 'Đăng nhập trên trình duyệt đã chọn, giữ từng cửa sổ ẩn danh.' : 'Chọn thao tác trong màn hình bên dưới.';
           $('btn-open-history').style.display = btn.dataset.tab === 'web-login' ? '' : 'none';
           if (btn.dataset.tab === 'codex-web') refreshCodexWeb();
           if (btn.dataset.tab === 'accounts') loadAccounts();

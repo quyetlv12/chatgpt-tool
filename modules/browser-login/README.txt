@@ -17,6 +17,8 @@ Tinh nang:
 - Realtime logs, tien do va danh sach nick dang chay tren giao dien.
 - Luu lich su dang nhap ChatGPT Web qua cac lan khoi dong (chi email, ket qua va thoi gian; khong luu password/2FA/session).
 - Tu xu ly man hinh "Choose a workspace" bang Personal account va hien ro buoc dang bi ket tren realtime log.
+- Link moi workspace ChatGPT co `wId`: sau khi tab phu tai xong, doc session va accounts/check trong dung browser, doi chieu email va ID workspace dich. Chi xac minh khi backend tra account dich khong bi vo hieu hoa; khong dung chu Personal account lam bang chung da tham gia. Trang thai workspace dang dung lay rieng tu header ChatGPT-Account-Id cua request main tab, co the la "chua xac minh". Khong tu bam chap nhan loi moi, merge du lieu, chuyen workspace hay luu token/response. Neu backend thay doi shape/tu choi truy cap, hien canh bao va giu browser. Bat reload de thu lai khi chua co quyen truy cap; luong link thuong/khong link va Codex van giu nguyen.
+- Workspace chi duoc xac minh khi `account.is_deactivated` la boolean false; co bao deactivated o account/record thi dung retry va canh bao. Flag thieu/sai kieu/mau thuan khong duoc coi la active. Ket qua chi phan anh thoi diem kiem tra, khong bao dam OpenAI khong deactive workspace ve sau.
 - Tai khoan loi se tu dong dua ve hang doi va mo lai bang browser sach cho den khi thanh cong; delay tang dan toi da 30 giay. Bam "Huy phien hien tai" de dung.
 - Cac cua so Chrome duoc sap xep theo so "Cua so song song", khong theo tong so account. Vi du 15 account chay 2 luong se tai su dung 2 vi tri tren/duoi co kich thuoc de doc, thay vi chia man hinh thanh 15 hang rat thap. Moi account retry giu nguyen vi tri worker; viewport van la desktop, khong gia lap mobile/touch.
 - Tren macOS nhieu man hinh, tool chi dung kich thuoc man hinh chinh thay vi gop tat ca man hinh. Mot account dung gan tron man hinh chinh nhung chua khoang trong ro rang cho menu bar va Dock; hai account xep tren/duoi; ba account luon xep thanh ba hang full-width nhu layout tham chieu.
@@ -24,9 +26,12 @@ Tinh nang:
 - Co nut Tam dung/Tiep tuc va Huy phien luon theo dung trang thai. Log, tien do, retry va ket qua phien hien tai duoc luu an toan xuong dia de khoi phuc sau khi reload/khoi dong lai server; khong luu password, 2FA hay link tab phu.
 - Khi server chap nhan mot phien moi, bang "Ket qua phien hien tai" duoc xoa sach va chi nhan ket qua dung `runId` moi; lich su tai khoan dai han van duoc giu rieng.
 - Import refresh token vao 9router va kiem chung SQLite sau khi ghi.
-- Co tab rieng dang nhap truc tiep ChatGPT web trong Chrome thong thuong; khong dung Codex OAuth va khong import token.
+- Co tab rieng dang nhap truc tiep ChatGPT web; khong dung Codex OAuth va khong import token.
+- ChatGPT Web cho chon Brave, Chrome, Edge, Chromium da cai tren may (macOS/Windows/Linux); Brave duoc chon lan dau neu co, lua chon duoc nho tren giao dien. Moi tai khoan dung cua so an danh va context khong persistent rieng, khong dung profile ca nhan; tab phu cung context, giu mo sau login. Chon ro trinh duyet thi khong tu fallback neu loi. Che do Tu dong van thu Chrome roi Chromium. OAuth/Codex khong thay doi.
 - URL tab phu sau dang nhap co the bat/tat tren giao dien; khi tat, tool bo qua noi dung/kiem tra URL, chi mo ChatGPT va khong tao tab phu.
 - Sau khi mo tab phu va reload ChatGPT, tool cho giao dien render roi tim nhan hien thi chinh xac `Personal account` theo noi dung DOM, khong phu thuoc vao class CSS dung chung cua ChatGPT. Ket qua phien, realtime log va lich su hien ro da xac minh hay chua xac minh; chi luu ket qua boolean, khong luu noi dung DOM/session.
+- Nhan Personal duoc chuan hoa khoang trang/NBSP va xuong dong, ke ca khi tach qua cac the con. Chi chap nhan chu hien thi: bo qua nhan an, transparent, Business va chu chi chua mot phan `Personal account`; khong luu noi dung DOM.
+- Khi bam "Bat dau chay" voi du lieu hop le, hop thoai hoi co bat tu dong reload cho lan chay nay khong. Mac dinh tat moi lan, cho 1-3600 giay (mac dinh 10); Huy/Esc khong khoi chay va giu nguyen danh sach nhap. Khi bat va co tab phu, neu chua thay Personal account: reload tab phu, cho tai xong, quay lai tab chinh, cho theo setting, reload va kiem tra lai; lap khong gioi han so vong den khi thay Personal. Dung khi bam Dung, dong tab/Chrome hoac loi tai trang; khong dang nhap lai hay tao them tab. Xac minh xong giu nguyen tab cho nguoi dung; khong ap dung cho Codex OAuth.
 
 Cach chay (tu setup tu dong):
 1. Giai nen file ZIP vao mot thu muc rieng.

@@ -2789,6 +2789,133 @@ def _cookie_value_for_domains(
     return candidates[0][2] if len(candidates) == 1 else None
 
 
+class _PersonalWorkspaceError(SessionError):
+    """A workspace gate must not fall back to an organization or be swallowed."""
+
+
+def _is_workspace_selection_url(url: str) -> bool:
+    parsed = urlparse(url)
+    return (
+        parsed.scheme == "https" and parsed.netloc.casefold() == "auth.openai.com"
+        and parsed.path.rstrip("/") == "/workspace" and not parsed.fragment
+    )
+
+
+def _select_personal_workspace(session: Any, device_id: str, log: LogFn) -> str:
+    """Mirror the official /workspace picker; never choose the first organization."""
+    import base64
+    import json
+    from urllib.parse import urljoin
+    from request_phase import _common_headers
+
+    headers = _common_headers("https://auth.openai.com/workspace")
+    headers["Content-Type"] = "application/json"
+    if device_id:
+        headers["oai-device-id"] = device_id
+    try:
+        raw_values = {
+            cookie.value for cookie in session.cookies.jar
+            if cookie.name == "oai-client-auth-session"
+            and cookie.domain.lstrip(".").casefold() == "auth.openai.com"
+            and cookie.path == "/"
+        }
+        if not raw_values:
+            # Official web-client fallback when picker metadata is not in a cookie.
+            # Reuse the authenticated session; never restart OAuth or guess an ID.
+            response = session.get(
+                "https://auth.openai.com/api/accounts/client_auth_session_dump",
+                headers=headers, timeout=30, allow_redirects=False,
+            )
+            if response.status_code != 200:
+                raise _PersonalWorkspaceError(
+                    f"Không lấy được dữ liệu Personal account: HTTP {response.status_code}"
+                )
+            if len(response.text) > 1048576:
+                raise ValueError("oversized session dump")
+            data = response.json()
+            payload = data.get("client_auth_session") if isinstance(data, dict) else None
+        else:
+            if len(raw_values) != 1:
+                raise ValueError("ambiguous cookie")
+            raw = raw_values.pop()
+            if len(raw) > 65536:
+                raise ValueError("oversized cookie")
+            # The official client decodes this cookie's FIRST segment (header=true),
+            # not a bearer JWT payload. Treat it only as picker data, never as auth.
+            encoded = raw.split(".", 1)[0]
+            payload = json.loads(base64.b64decode(
+                encoded + "=" * (-len(encoded) % 4), altchars=b"-_", validate=True,
+            ))
+        if not isinstance(payload, dict):
+            raise ValueError("invalid picker metadata")
+        workspaces = payload.get("workspaces")
+        if not isinstance(workspaces, list) or len(workspaces) > 100:
+            raise ValueError("invalid workspaces")
+        personal = [item for item in workspaces if isinstance(item, dict)
+                    and item.get("kind") == "personal"]
+        if len(personal) != 1 or personal[0].get("disabled_reason"):
+            raise ValueError("personal unavailable or ambiguous")
+        workspace_id = personal[0].get("id")
+        if not isinstance(workspace_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,256}", workspace_id):
+            raise ValueError("invalid workspace id")
+    except _PersonalWorkspaceError:
+        raise
+    except Exception:
+        raise _PersonalWorkspaceError(
+            "Không xác định được Personal account khả dụng; không chọn workspace tổ chức."
+        ) from None
+
+    log("[session-req] Đang chọn Personal account")
+    try:
+        response = session.post(
+            "https://auth.openai.com/api/accounts/workspace/select",
+            headers=headers, json={"workspace_id": workspace_id},
+            timeout=30, allow_redirects=False,
+        )
+        if response.status_code != 200:
+            raise _PersonalWorkspaceError(f"Chọn Personal account thất bại: HTTP {response.status_code}")
+        data = response.json()
+        continuation = data.get("continue_url") if isinstance(data, dict) else None
+        if not isinstance(continuation, str) or not continuation or len(continuation) > 8192:
+            raise ValueError("missing continuation")
+        if any(ord(char) <= 32 or ord(char) == 127 for char in continuation):
+            raise ValueError("invalid continuation")
+        continuation = urljoin("https://auth.openai.com", continuation)
+        parsed = urlparse(continuation)
+        official_target = parsed.netloc.casefold() == "auth.openai.com" or (
+            parsed.netloc.casefold() == "chatgpt.com"
+            and parsed.path == "/api/auth/callback/openai"
+        )
+        if parsed.scheme != "https" or not official_target or parsed.fragment:
+            raise ValueError("untrusted continuation")
+        if _is_workspace_selection_url(continuation):
+            raise ValueError("workspace loop")
+    except _PersonalWorkspaceError:
+        raise
+    except Exception:
+        raise _PersonalWorkspaceError("Không thể tiếp tục đăng nhập bằng Personal account.") from None
+    log("[session-req] Đã chọn Personal account")
+    return continuation
+
+
+def _follow_personal_login_redirects(
+    session: Any, url: str, device_id: str, log: LogFn, *, personal_selected: bool = False,
+) -> tuple[str, str]:
+    """Keep ordinary redirects unchanged; resolve a workspace page once if reached."""
+    from request_phase import _step_follow_redirects
+
+    callback, final = _step_follow_redirects(session, url, log)
+    if not callback and _is_workspace_selection_url(final):
+        if personal_selected:
+            raise _PersonalWorkspaceError("Personal account quay lại màn hình chọn workspace; đã dừng đăng nhập.")
+        continuation = _select_personal_workspace(session, device_id, log)
+        callback, final = _step_follow_redirects(session, continuation, log)
+        personal_selected = True
+    if personal_selected and not callback:
+        raise _PersonalWorkspaceError("Đã chọn Personal account nhưng chưa hoàn tất callback đăng nhập.")
+    return callback, final
+
+
 async def get_session_pure_request(
     *,
     email: str,
@@ -2820,7 +2947,6 @@ async def get_session_pure_request(
         _get_sentinel_token,
         _common_headers,
         _step_authorize_continue,
-        _step_follow_redirects,
         _consume_callback,
         _get_session_tokens,
         _step_resend_otp,
@@ -3268,6 +3394,12 @@ async def get_session_pure_request(
             if continue_url and continue_url.startswith("/"):
                 continue_url = urljoin("https://auth.openai.com", continue_url)
 
+            personal_selected = _is_workspace_selection_url(continue_url)
+            if personal_selected:
+                continue_url = _select_personal_workspace(session, device_id, log)
+            elif page_type == "workspace_selection":
+                raise _PersonalWorkspaceError("Màn hình chọn workspace không có đường dẫn chính thức hợp lệ.")
+
             # ── Helpers cho callback consume + verify session cookie ──
             # `_consume_callback` của request_phase trả bool (cookie đã set chưa)
             # nhưng caller cũ ignore → khi cookie chưa set kịp do server chậm /
@@ -3307,23 +3439,27 @@ async def get_session_pure_request(
             # Step 7-8: Follow redirects + consume callback
             # If continue_url points to auth.openai.com (not a callback), we need to
             # reauthorize to get the actual callback with code parameter.
-            if continue_url and "auth.openai.com" in continue_url and "code=" not in continue_url:
+            if not personal_selected and continue_url and "auth.openai.com" in continue_url and "code=" not in continue_url:
                 log("[session-req] continue_url is auth page, attempting reauthorize for callback...")
                 try:
                     csrf2 = _step_csrf(session, log)
                     auth_url2 = _step_auth_url(session, csrf2, log)
                     # Follow authorize URL (should redirect to callback since we're now authenticated)
-                    callback_url, _ = _step_follow_redirects(session, auth_url2, log)
+                    callback_url, _ = _follow_personal_login_redirects(session, auth_url2, device_id, log)
                     if callback_url:
                         _consume_callback_verified(callback_url)
                     else:
                         log("[session-req] reauthorize: callback URL KHÔNG tìm thấy trong redirect chain")
+                except _PersonalWorkspaceError:
+                    raise
                 except Exception as e:
                     log(f"[session-req] reauthorize attempt failed: {e}")
 
             elif continue_url:
                 _t_cb = time.monotonic()
-                callback_url, final_url = _step_follow_redirects(session, continue_url, log)
+                callback_url, final_url = _follow_personal_login_redirects(
+                    session, continue_url, device_id, log, personal_selected=personal_selected,
+                )
                 log(
                     f"[session-req] follow_redirects {time.monotonic() - _t_cb:.2f}s "
                     f"callback={'found' if callback_url else 'missing'}"
@@ -3366,9 +3502,11 @@ async def get_session_pure_request(
                     loc = (resp.headers.get("Location") or "").strip()
                     if loc:
                         redir_url = loc if loc.startswith("http") else urljoin(auth_url2, loc)
-                        callback_url, _ = _step_follow_redirects(session, redir_url, log)
+                        callback_url, _ = _follow_personal_login_redirects(session, redir_url, device_id, log)
                         if callback_url:
                             _consume_callback_verified(callback_url)
+                except _PersonalWorkspaceError:
+                    raise
                 except Exception as e:
                     log(f"[session-req] reauthorize failed: {e}")
 

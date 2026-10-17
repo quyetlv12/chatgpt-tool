@@ -130,12 +130,68 @@ class SuiteManager:
             env.update(module.env)
             self.processes[module.key] = subprocess.Popen(module.command, cwd=module.cwd, env=env)
 
-    def status(self) -> dict[str, list[dict[str, object]]]:
+    def has_browser_windows(self) -> bool:
+        """Detect headed Chrome descendants, not saved sessions or personal Chrome."""
+        owned = {process.pid for process in self.processes.values() if process.poll() is None}
+        if not owned:
+            return False
+        try:
+            result = subprocess.run(
+                ["ps", "-axo", "pid=,ppid=,command="],
+                capture_output=True, text=True, timeout=1, check=True,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return False
+        processes = {}
+        for line in result.stdout.splitlines():
+            parts = line.strip().split(None, 2)
+            if len(parts) == 3 and parts[0].isdigit() and parts[1].isdigit():
+                processes[int(parts[0])] = (int(parts[1]), parts[2].lower())
+        # Workers and Playwright's driver sit between the module and Chrome.
+        while True:
+            children = {pid for pid, (parent, _command) in processes.items() if parent in owned}
+            if children <= owned:
+                break
+            owned.update(children)
+        browsers = set()
+        for pid in owned:
+            command = processes.get(pid, (0, ""))[1]
+            if (not any(name in command for name in ("chrome", "chromium", "brave", "msedge", "microsoft edge"))
+                    or "--type=" in command or "--headless" in command):
+                continue
+            if ("--remote-debugging-pipe" in command
+                    or "--user-data-dir=" in command and "shoptaikhoan-passkey-chrome-" in command):
+                browsers.add(pid)
+        if not browsers:
+            return False
+        if sys.platform != "darwin":
+            # shortcut: Unix source mode uses process liveness; macOS checks native windows.
+            return True
+        # Chrome can remain alive after its last window closes on macOS.
+        # shortcut: minimized windows need macOS title access; use worker events if unavailable.
+        script = (
+            'ObjC.import("CoreGraphics"); '
+            'var windows=ObjC.deepUnwrap(ObjC.castRefToObject($.CGWindowListCopyWindowInfo(0, 0))); '
+            f'var owned={json.dumps(sorted(browsers))}; '
+            'JSON.stringify(windows.some(w => owned.indexOf(w.kCGWindowOwnerPID) !== -1 '
+            '&& w.kCGWindowLayer === 0 && w.kCGWindowBounds.Width > 0 && w.kCGWindowBounds.Height > 0 '
+            '&& (w.kCGWindowIsOnscreen === true || Boolean(w.kCGWindowName))))'
+        )
+        try:
+            result = subprocess.run(
+                ["/usr/bin/osascript", "-l", "JavaScript", "-e", script],
+                capture_output=True, text=True, timeout=2, check=True,
+            )
+            return json.loads(result.stdout) is True
+        except (OSError, subprocess.SubprocessError, ValueError):
+            return False
+
+    def status(self) -> dict[str, object]:
         modules = []
         for module in self.modules:
             ready, _detail = self.probe(module.socket_path)
             modules.append({"key": module.key, "label": module.label, "ready": ready})
-        return {"modules": modules}
+        return {"modules": modules, "browser_windows_open": self.has_browser_windows()}
 
     def stop(self) -> None:
         for process in self.processes.values():

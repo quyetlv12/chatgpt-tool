@@ -32,6 +32,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs, urlencode
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
+from browser_options import BROWSER_NAMES, browser_launch_options
 
 # Force UTF-8 + unbuffered output on Windows so server.py receives log
 # lines in real-time instead of waiting for Python's pipe buffer.
@@ -238,7 +239,7 @@ def apply_browser_window_bounds(context, page, bounds):
 
 def queue_browser_control_command(action, index=None, screen_width=None, screen_height=None):
     """Queue UI control work for execution on each browser's owning thread."""
-    if action not in ("focus", "rearrange"):
+    if action not in ("focus", "rearrange", "show_all"):
         raise ValueError("Unsupported browser control action")
     if action == "focus":
         try:
@@ -275,7 +276,7 @@ def queue_browser_control_command(action, index=None, screen_width=None, screen_
             layout_total = len(sessions)
             layout_index = position
         entry["commands"].put({
-            "action": "layout",
+            "action": "show_all" if action == "show_all" else "layout",
             "bounds": calculate_window_bounds(
                 layout_index,
                 layout_total,
@@ -297,6 +298,13 @@ def execute_browser_control_command(entry, command):
             page.bring_to_front()
             emit_web_phase(email, index, "window_focus", "Đã đưa cửa sổ ChatGPT lên trước")
             return True
+        if action == "show_all":
+            bounds = command.get("bounds") or {}
+            applied = apply_browser_window_bounds(entry.get("context"), page, bounds)
+            page.bring_to_front()
+            if applied:
+                emit_web_phase(email, index, "window_show_all", "Đã hiển thị cửa sổ ChatGPT đang chạy")
+            return applied
         if action == "layout":
             bounds = command.get("bounds") or {}
             applied = apply_browser_window_bounds(entry.get("context"), page, bounds)
@@ -1327,24 +1335,35 @@ def select_chatgpt_workspace(page):
 
 
 def verify_personal_account_label(page, timeout=15000):
-    """Return whether the final ChatGPT UI exposes a visible exact account label."""
+    """Match a visible account label, ignoring rendered whitespace differences."""
     handle = None
     try:
         # ChatGPT reuses the caption utility classes across the sidebar. Taking
         # the first class match can therefore read an unrelated label and return
         # immediately before the account footer has rendered. Poll the live DOM
-        # for exact visible text instead; this is independent of class-name and
-        # nesting changes while still rejecting partial/hidden matches.
+        # for normalized exact text instead. Check the text's own visibility,
+        # too: a visible wrapper can contain a fully transparent caption.
         handle = page.wait_for_function(
-            """
-            expected => Array.from(document.querySelectorAll('body *')).some(element => {
-              const text = (element.innerText || '').trim();
-              const style = window.getComputedStyle(element);
-              const visible = Boolean(
-                element.offsetWidth || element.offsetHeight || element.getClientRects().length
-              ) && style.visibility === 'visible' && style.opacity !== '0';
-              return visible && text === expected;
-            })
+            r"""
+            expected => {
+              const visible = element => {
+                if (!(element.offsetWidth || element.offsetHeight || element.getClientRects().length)) return false;
+                for (let node = element; node; node = node.parentElement) {
+                  const style = window.getComputedStyle(node);
+                  if (style.display === 'none' || style.visibility !== 'visible' || style.opacity === '0') return false;
+                }
+                return true;
+              };
+              return Array.from(document.querySelectorAll('body *')).some(element => {
+                const text = (element.innerText || '').replace(/\s+/g, ' ').trim();
+                if (text !== expected || !visible(element)) return false;
+                const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+                while (walker.nextNode()) {
+                  if (walker.currentNode.textContent.trim() && !visible(walker.currentNode.parentElement)) return false;
+                }
+                return text === expected;
+              });
+            }
             """,
             arg="Personal account",
             polling=250,
@@ -1359,6 +1378,100 @@ def verify_personal_account_label(page, timeout=15000):
                 handle.dispose()
         except Exception:
             pass
+
+
+def workspace_invite_target(url):
+    """Only a supported ChatGPT invitation can require workspace verification."""
+    parsed = urlparse(url or "")
+    query = parse_qs(parsed.query, keep_blank_values=True)
+    required = parsed.hostname == "chatgpt.com" and (
+        "invite" in parsed.path.lower() or "wId" in query
+    )
+    if not required:
+        return {"required": False, "id": "", "error": ""}
+    try:
+        port = parsed.port
+    except ValueError:
+        return {"required": True, "id": "", "error": "invalid_invite"}
+    values = query.get("wId", [])
+    valid = (parsed.scheme == "https" and port in (None, 443) and not parsed.username and not parsed.password
+             and len(values) == 1 and re.fullmatch(
+                 r"[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}", values[0]))
+    return {"required": True, "id": values[0].lower() if valid else "",
+            "error": "" if valid else "invalid_invite"}
+
+
+def observe_active_workspace(request, state):
+    """Read account routing of the main tab; never retain authorization headers."""
+    try:
+        parsed = urlparse(request.url)
+        if (parsed.scheme != "https" or parsed.hostname != "chatgpt.com"
+                or request.method != "GET"
+                or not re.match(r"^/backend-api/(?:conversations|models)(?:/|$)", parsed.path)):
+            return
+        value = request.header_value("chatgpt-account-id") or ""
+        if re.fullmatch(r"[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}", value):
+            state["id"] = value.lower()
+    except Exception:
+        pass  # Routing is optional evidence, never a membership success fallback.
+
+
+def verify_workspace_membership(page, email, workspace_id):
+    """Read membership in this browser. Tokens and backend bodies stay in the page."""
+    try:
+        result = page.evaluate(r"""async ({email, workspaceId}) => {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 15000);
+          const fail = error => ({verified: false, error});
+          try {
+            if (location.origin !== 'https://chatgpt.com') return fail('wrong_origin');
+            const options = {credentials: 'include', cache: 'no-store', signal: controller.signal};
+            const sessionResponse = await fetch('/api/auth/session', options);
+            if (!sessionResponse.ok) return fail('session_unavailable');
+            let session;
+            try { session = await sessionResponse.json(); } catch (_) { return fail('session_unavailable'); }
+            if (typeof session?.user?.email !== 'string' ||
+                session.user.email.trim().toLowerCase() !== email.trim().toLowerCase()) return fail('identity_mismatch');
+            if (typeof session.accessToken !== 'string' || !session.accessToken) return fail('session_unavailable');
+            const path = '/backend-api/accounts/check/v4-2023-04-27';
+            const response = await fetch(path, {...options, headers: {
+              'Authorization': 'Bearer ' + session.accessToken,
+              'Accept': 'application/json', 'x-openai-target-path': path, 'x-openai-target-route': path,
+            }});
+            if (response.status === 429) return fail('rate_limited');
+            if (response.status === 401 || response.status === 403) return fail('access_denied');
+            if (!response.ok) return fail('request_failed');
+            let data;
+            try { data = await response.json(); } catch (_) { return fail('unsupported_response'); }
+            if (!data?.accounts || Array.isArray(data.accounts) || typeof data.accounts !== 'object') return fail('unsupported_response');
+            let supported = Object.keys(data.accounts).length === 0;
+            for (const record of Object.values(data.accounts)) {
+              const account = record?.account;
+              if (typeof account?.account_id !== 'string') continue;
+              supported = true;
+              if (account.account_id.toLowerCase() !== workspaceId) continue;
+              const statuses = [account.status, record.status].map(status =>
+                typeof status === 'string' ? status.trim().toLowerCase() : '');
+              if (account.is_deactivated === true || record.is_deactivated === true ||
+                  statuses.includes('deactivated')) return fail('workspace_unavailable');
+              if (account.is_pending === true || record.is_pending === true ||
+                  statuses.some(status => ['pending', 'invited'].includes(status))) return fail('not_joined');
+              if (account.is_deactivated !== false ||
+                  ('is_deactivated' in record && record.is_deactivated !== false)) return fail('unsupported_response');
+              return {verified: true, error: ''};
+            }
+            return fail(supported ? 'not_joined' : 'unsupported_response');
+          } catch (_) {
+            return fail('request_failed');
+          } finally {
+            clearTimeout(timer);
+          }
+        }""", {"email": email, "workspaceId": workspace_id})
+        if isinstance(result, dict) and isinstance(result.get("verified"), bool):
+            return result
+    except Exception:
+        pass  # Do not log exceptions containing cookies, tokens, or backend responses.
+    return {"verified": False, "error": "request_failed"}
 
 
 def emit_web_phase(email, index, stage, message):
@@ -1814,11 +1927,15 @@ def login_web_one_account(
     layout_total=None,
     reload_after=None,
     codex_web=False,
+    browser_id="auto",
 ):
     """Run one clean direct-login attempt and retain a successful browser."""
     if codex_web:
         open_link, reload_after = "", None
+        browser_id = "auto"
     email, password, totp_secret = account
+    workspace_target = workspace_invite_target(open_link)
+    active_workspace = {"id": ""}
     emit_event("START", email, index=index, total=total, attempt=attempt)
     print("[{}/{}] {} | attempt {}".format(index, total, email, attempt), flush=True)
     layout_index = int(layout_index or index)
@@ -1852,17 +1969,24 @@ def login_web_one_account(
         return result
 
     try:
-        emit_web_phase(email, index, "browser_start", "Đang khởi tạo Chrome riêng")
+        if not codex_web:
+            launch_kwargs['args'].append('--incognito')
+        emit_web_phase(email, index, "browser_start", "Đang khởi tạo trình duyệt riêng")
         pw = sync_playwright().start()
         try:
-            browser = pw.chromium.launch(channel="chrome", **launch_kwargs)
-            print("    Browser: Google Chrome | {}".format("Codex OAuth" if codex_web else "direct ChatGPT web"), flush=True)
+            browser = pw.chromium.launch(**browser_launch_options(browser_id), **launch_kwargs)
+            print("    Browser: {} | {}".format(BROWSER_NAMES[browser_id], "Codex OAuth" if codex_web else "direct ChatGPT web (private)"), flush=True)
         except Exception as error:
-            print("    [!] Chrome unavailable, fallback Chromium: {}".format(error), flush=True)
+            if browser_id != "auto":
+                return finish({"email": email, "index": index, "status": "error", "retryable": False,
+                               "error": "Không mở được trình duyệt đã chọn; hãy kiểm tra cài đặt hoặc chọn lại"})
+            print("    [!] Chrome unavailable, fallback Chromium: {}".format(type(error).__name__), flush=True)
             browser = pw.chromium.launch(**launch_kwargs)
-        emit_web_phase(email, index, "browser_ready", "Chrome đã sẵn sàng")
+        emit_web_phase(email, index, "browser_ready", "Trình duyệt đã sẵn sàng")
         context = browser.new_context(**build_web_context_options(window_bounds))
         page = context.new_page()
+        if workspace_target["required"]:
+            page.on("request", lambda request: observe_active_workspace(request, active_workspace))
         if apply_browser_window_bounds(context, page, window_bounds):
             emit_web_phase(
                 email,
@@ -1898,17 +2022,19 @@ def login_web_one_account(
                 # pages keep long-lived requests open.
                 link_page.goto(open_link, wait_until="load", timeout=45000)
                 link_opened = True
-                print("WEB_LINK_OPEN|{}|{}".format(email, open_link), flush=True)
+                print("WEB_LINK_OPEN|{}|{}".format(email, "workspace-invite" if workspace_target["required"] else open_link), flush=True)
                 emit_web_phase(email, index, "link_ready", "Tab phụ đã tải xong")
             except Exception as error:
-                link_error = str(error)
+                link_error = type(error).__name__ if workspace_target["required"] else str(error)
                 post_login_error = "link_error"
-                print("WEB_LINK_FAIL|{}|{}|{}".format(email, open_link, link_error.replace("|", "/")), flush=True)
+                print("WEB_LINK_FAIL|{}|{}|{}".format(email, "workspace-invite" if workspace_target["required"] else open_link, link_error.replace("|", "/")), flush=True)
                 emit_web_phase(email, index, "link_error", "Tab phụ mở không thành công")
             finally:
                 # Opening a new page can move focus away from ChatGPT. Return
                 # to the original page before any delay, reload, or account
                 # validation so each worker keeps its own deterministic order.
+                if workspace_target["required"]:
+                    active_workspace["id"] = ""  # Pre-invitation routing is not fresh evidence.
                 try:
                     page.bring_to_front()
                     emit_web_phase(email, index, "main_tab_ready", "Đã quay lại tab chính ChatGPT")
@@ -1917,29 +2043,88 @@ def login_web_one_account(
                     emit_web_phase(email, index, "main_tab_error", "Không đưa được tab chính lên trước; vẫn giữ phiên")
         reloaded = False
         reload_error = ""
-        if reload_after is not None and not post_login_error:
-            emit_web_phase(email, index, "reload_wait", "Chờ {} giây để reload tab ChatGPT một lần".format(reload_after))
-            if not _session_shutdown_event.wait(reload_after):
+        personal_account_verified = False
+        workspace_verified = False
+        workspace_check_error = workspace_target["error"]
+        personal_retry = 0
+        while not codex_web and not post_login_error:
+            if _session_shutdown_event.is_set():
+                post_login_error = "cancelled"
+                break
+            if personal_retry:
+                if not all(retained_browser_session_is_alive({"browser": browser, "context": context, "page": tab})
+                           for tab in (page, link_page)):
+                    post_login_error = "tabs_closed"
+                    break
+                emit_web_phase(email, index, "personal_account_retry",
+                               "{}; thử lại vòng {}: reload tab phụ → tab chính".format(
+                                   "Chưa xác minh workspace đích" if workspace_target["required"] else "Chưa có Personal account",
+                                   personal_retry))
                 try:
+                    link_page.bring_to_front()
+                    link_page.reload(wait_until="load", timeout=45000)
+                    emit_web_phase(email, index, "link_ready", "Tab phụ đã reload và tải xong")
+                except Exception:
+                    post_login_error = "link_error"
+                    emit_web_phase(email, index, "link_error", "Không reload được tab phụ; vẫn giữ phiên")
+                finally:
+                    try:
+                        page.bring_to_front()
+                        emit_web_phase(email, index, "main_tab_ready", "Đã quay lại tab chính ChatGPT")
+                    except Exception:
+                        post_login_error = post_login_error or "main_tab_error"
+                        emit_web_phase(email, index, "main_tab_error", "Không đưa được tab chính lên trước; vẫn giữ phiên")
+                if post_login_error:
+                    break
+            if reload_after is not None:
+                emit_web_phase(email, index, "reload_wait", "Chờ {} giây để reload tab ChatGPT".format(reload_after))
+                if _session_shutdown_event.wait(reload_after):
+                    post_login_error = "cancelled"
+                    break
+                if not all(retained_browser_session_is_alive({"browser": browser, "context": context, "page": tab})
+                           for tab in (page, link_page) if tab is not None):
+                    post_login_error = "tabs_closed"
+                    break
+                try:
+                    if workspace_target["required"]:
+                        active_workspace["id"] = ""
                     page.reload(wait_until="load", timeout=45000)
                     reloaded = True
                     print("WEB_CHATGPT_RELOAD|{}".format(email), flush=True)
-                    emit_web_phase(email, index, "reloaded", "Đã reload tab ChatGPT một lần; giữ tab để bạn sử dụng")
+                    emit_web_phase(email, index, "reloaded", "Đã reload tab ChatGPT")
                 except Exception as error:
                     reload_error = type(error).__name__
                     post_login_error = "reload_error"
-                    emit_web_phase(email, index, "reload_error", "Không reload được; giữ nguyên phiên đăng nhập, không thử lại")
-            else:
+                    emit_web_phase(email, index, "reload_error", "Không reload được; giữ nguyên phiên đăng nhập")
+                    break
+            if _session_shutdown_event.is_set():
                 post_login_error = "cancelled"
+                break
+            if workspace_target["required"]:
+                emit_web_phase(email, index, "workspace_check", "Đang đối chiếu quyền truy cập workspace đích với backend")
+                verification = (verify_workspace_membership(page, email, workspace_target["id"])
+                                if workspace_target["id"] else {"verified": False, "error": "invalid_invite"})
+                workspace_verified, workspace_check_error = verification["verified"], verification["error"]
+                emit_web_phase(email, index,
+                               "workspace_verified" if workspace_verified else "workspace_unverified",
+                               "Đã xác minh quyền truy cập workspace đích" if workspace_verified else
+                               "Chưa xác minh workspace đích · {}".format(workspace_check_error))
+                if workspace_check_error not in ("", "not_joined", "request_failed"):
+                    post_login_error = "workspace_check_failed"
+                    break
+                verified = workspace_verified
+            else:
+                emit_web_phase(email, index, "personal_account_check", "Đang kiểm tra nhãn Personal account")
+                personal_account_verified = verify_personal_account_label(page)
+                emit_web_phase(email, index,
+                               "personal_account_verified" if personal_account_verified else "personal_account_unverified",
+                               "Đã xác minh Personal account" if personal_account_verified else "Chưa xác minh Personal account")
+                verified = personal_account_verified
+            if verified or reload_after is None or link_page is None:
+                break
+            personal_retry += 1
         if not codex_web and _session_shutdown_event.is_set():
             post_login_error = post_login_error or "cancelled"
-        personal_account_verified = False
-        if not codex_web and not post_login_error:
-            emit_web_phase(email, index, "personal_account_check", "Đang kiểm tra nhãn Personal account")
-            personal_account_verified = verify_personal_account_label(page)
-            emit_web_phase(email, index,
-                           "personal_account_verified" if personal_account_verified else "personal_account_unverified",
-                           "Đã xác minh Personal account" if personal_account_verified else "Chưa xác minh Personal account")
         print("WEB_OPEN|{}|{}".format(email, "Codex OAuth" if codex_web else CHATGPT_URL), flush=True)
         command_queue = queue.Queue()
         session_entry = {
@@ -1969,6 +2154,11 @@ def login_web_one_account(
             "chatgptReloaded": reloaded,
             "chatgptReloadError": reload_error,
             "personalAccountVerified": personal_account_verified,
+            "workspaceCheckRequired": workspace_target["required"],
+            "workspaceVerified": workspace_verified,
+            "workspaceId": workspace_target["id"],
+            "activeWorkspaceId": active_workspace["id"],
+            "workspaceCheckError": workspace_check_error,
             "postLoginError": post_login_error,
             "codexOpened": codex_opened,
         }
@@ -1980,6 +2170,11 @@ def login_web_one_account(
             link="yes" if link_opened else "no",
             reloaded="yes" if result["chatgptReloaded"] else "no",
             personal="yes" if result["personalAccountVerified"] else "no",
+            workspace_required="yes" if result["workspaceCheckRequired"] else "no",
+            workspace="yes" if result["workspaceVerified"] else "no",
+            workspace_id=result["workspaceId"],
+            active_workspace_id=result["activeWorkspaceId"],
+            workspace_error=result["workspaceCheckError"],
             codex="yes" if codex_opened else "no",
             flow_error=post_login_error,
         )
@@ -2023,6 +2218,7 @@ def run_web_login_queue(
     retry_max_delay=30,
     reload_after=None,
     codex_web=False,
+    browser_id="auto",
 ):
     """Retry failed accounts until all succeed while preserving bounded concurrency."""
     if not accounts:
@@ -2071,6 +2267,7 @@ def run_web_login_queue(
                     layout_total=total,
                     reload_after=reload_after,
                     codex_web=codex_web,
+                    browser_id=browser_id,
                 )
             else:
                 result = login_job(*common_args)
@@ -2123,10 +2320,10 @@ def run_web_login_queue(
             continue
 
         active_attempts = max(0, active_attempts - 1)
-        if result.get("status") == "success" or codex_web:
-            if codex_web and result.get("status") != "success":
+        if result.get("status") == "success" or codex_web or result.get("retryable") is False:
+            if result.get("status") != "success":
                 emit_event("ERROR", accounts[result_index][0], index=result_index + 1,
-                           error="Xác thực Codex chưa hoàn tất; hãy kiểm tra tab đang mở")
+                           error="Xác thực Codex chưa hoàn tất; hãy kiểm tra tab đang mở" if codex_web else result.get("error"))
             results[result_index] = result
             completed += 1
             continue
@@ -2168,6 +2365,16 @@ def main():
     slow = "--slow" in sys.argv
     codex_web = "--codex-web" in sys.argv
     web_only = "--web-only" in sys.argv or codex_web
+    browser_id = "auto"
+    if "--browser" in sys.argv:
+        try:
+            browser_id = sys.argv[sys.argv.index("--browser") + 1]
+            if not web_only or codex_web:
+                raise ValueError('Chọn trình duyệt chỉ áp dụng cho ChatGPT Web')
+            browser_launch_options(browser_id)
+        except (ValueError, IndexError) as error:
+            print("[!] Không thể chọn trình duyệt: {}".format(error))
+            sys.exit(1)
     reload_after = None
     if "--reload-after" in sys.argv:
         try:
@@ -2227,7 +2434,7 @@ def main():
             name="browser-control-listener",
             daemon=True,
         ).start()
-        results = run_web_login_queue(accounts, active_workers, slow, open_link, reload_after=reload_after, codex_web=codex_web)
+        results = run_web_login_queue(accounts, active_workers, slow, open_link, reload_after=reload_after, codex_web=codex_web, browser_id=browser_id)
     else:
         start_callback_dispatcher()
         try:

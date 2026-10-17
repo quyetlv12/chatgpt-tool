@@ -403,9 +403,11 @@ class TwoFAService:
         def safe_login_log(message: str) -> None:
             # get_session_pure_request() has verbose protocol diagnostics. The
             # bulk passkey queue must never expose those (URLs, identities,
-            # challenge IDs, or response fragments), so forward only the fixed
-            # retry milestone from _login.
-            if log is not None and str(message).startswith("[login]"):
+            # challenge IDs, or response fragments), so forward only fixed
+            # Personal-selection and retry milestones.
+            if log is not None and message == "[session-req] Đã chọn Personal account":
+                log("[auth] Đã chọn Personal account")
+            elif log is not None and str(message).startswith("[login]"):
                 log("[auth] Đăng nhập tạm thời chưa thành công; đang thử lại...")
 
         login_task = asyncio.create_task(self._login(

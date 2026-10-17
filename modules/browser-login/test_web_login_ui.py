@@ -58,6 +58,9 @@ class WebLoginUiStateTests(unittest.TestCase):
         self.assertIn("shoptaikhoan.webLoginLinkEnabled", self.html)
 
     def test_current_results_can_focus_and_rearrange_browser_windows(self):
+        self.assertIn('id="btn-web-show-running"', self.html)
+        self.assertIn("/api/web-login/show", self.html)
+        self.assertIn("showRunningWebLoginTabs", self.html)
         self.assertIn('id="btn-web-rearrange"', self.html)
         self.assertIn("/api/web-login/rearrange", self.html)
         self.assertIn("/api/web-login/focus", self.html)

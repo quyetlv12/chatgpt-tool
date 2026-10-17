@@ -21,6 +21,8 @@ Cửa sổ sẽ tự tạo `.venv`, cài thư viện, mở trình duyệt `http:
 3. Tab **Convert JSON**: dán auth/session JSON có sẵn.
 4. File nằm trong thư mục `out/`.
 
+Với định dạng Cockpit hoặc 9router, có thể bỏ chọn **Tự nhập vào Cockpit / Tự thêm vào 9Router** để chỉ xuất JSON, không tự mở Cockpit hoặc gửi dữ liệu sang 9router. Tool nhớ lựa chọn bật/tắt trên trình duyệt. sub2api chỉ xuất JSON, không tự nhập.
+
 ## CLI
 
 ```bash
