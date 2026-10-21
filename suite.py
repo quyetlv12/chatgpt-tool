@@ -1,4 +1,4 @@
-"""One launcher and dashboard for the three isolated Shoptaikhoan modules."""
+"""One launcher and dashboard for isolated Shoptaikhoan modules."""
 
 from __future__ import annotations
 
@@ -54,6 +54,7 @@ def build_modules(root: Path = ROOT, python: Path | None = None) -> tuple[Module
     twofa_executable = os.environ.get("SHOPTAIKHOAN_SUITE_TWOFA_EXECUTABLE")
     export_executable = os.environ.get("SHOPTAIKHOAN_SUITE_EXPORT_EXECUTABLE")
     browser_executable = os.environ.get("SHOPTAIKHOAN_SUITE_BROWSER_EXECUTABLE")
+    chat_backup_executable = os.environ.get("SHOPTAIKHOAN_SUITE_CHAT_BACKUP_EXECUTABLE")
     return (
         Module(
             "twofa",
@@ -89,6 +90,19 @@ def build_modules(root: Path = ROOT, python: Path | None = None) -> tuple[Module
                 "SHOPTAIKHOAN_PUBLIC_URL": f"http://browser.localhost:{HUB_PORT}",
                 "SHOPTAIKHOAN_DATA_DIR": str(runtime / "browser-login"),
                 "SHOPTAIKHOAN_IMPORT_API": f"http://browser.localhost:{HUB_PORT}/api/import",
+            },
+        ),
+        Module(
+            "chat-backup",
+            "Chat Backup",
+            "backup.localhost",
+            sockets / "chat-backup.sock",
+            Path(chat_backup_executable).parent if chat_backup_executable else root / "modules" / "chat-backup",
+            (chat_backup_executable,) if chat_backup_executable else (executable, "-m", "chat_backup.server"),
+            {
+                "CHAT_BACKUP_SOCKET": str(sockets / "chat-backup.sock"),
+                "CHAT_BACKUP_PUBLIC_URL": f"http://backup.localhost:{HUB_PORT}",
+                "CHAT_BACKUP_DATA_DIR": str(runtime / "chat-backup"),
             },
         ),
     )
@@ -233,7 +247,7 @@ class SuiteManager:
 
     def close_all_browser_windows(self) -> dict[str, object]:
         """Close every Chrome window owned by any Suite module."""
-        result: dict[str, object] = {"twofa": 0, "browser": False}
+        result: dict[str, object] = {"twofa": 0, "browser": False, "chat-backup": False}
         modules = {module.key: module for module in self.modules}
 
         twofa = modules.get("twofa")
@@ -263,7 +277,15 @@ class SuiteManager:
                     result["browser"] = bool(payload.get("closed"))
             except (OSError, ValueError, TypeError):
                 pass
-        result["closed"] = int(result["twofa"]) + int(bool(result["browser"]))
+        chat_backup = modules.get("chat-backup")
+        if chat_backup:
+            try:
+                status, payload = self._request_module_json(chat_backup, "POST", "/api/browser/windows/close")
+                if status == 200:
+                    result["chat-backup"] = bool(payload.get("closed"))
+            except (OSError, ValueError, TypeError):
+                pass
+        result["closed"] = int(result["twofa"]) + int(bool(result["browser"])) + int(bool(result["chat-backup"]))
         return result
 
 

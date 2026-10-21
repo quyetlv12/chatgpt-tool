@@ -11,12 +11,13 @@ class SuiteMenuTests(unittest.TestCase):
     def setUpClass(cls):
         cls.source = (ROOT / "packaging/macos/ShoptaikhoanSuite.swift").read_text()
 
-    def test_three_tool_shortcuts_are_top_level_and_match_dashboard_urls(self):
+    def test_four_tool_shortcuts_are_top_level_and_match_dashboard_urls(self):
         dashboard = (ROOT / "web/index.html").read_text()
         for name, host in (
             ("2FA & Password", "twofa"),
             ("Codex Export", "export"),
             ("Browser Login & 9Router", "browser"),
+            ("Chat Backup", "backup"),
         ):
             url = f"http://{host}.localhost:5050/"
             self.assertIn(f'("{name}", "{url}")', self.source)

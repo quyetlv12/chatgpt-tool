@@ -10,6 +10,10 @@ APP="$DIST/Shoptaikhoan Suite.app"
 [[ "$(uname -s)" == Darwin && "$(uname -m)" == arm64 ]] || { echo "Build này dành cho Apple Silicon macOS." >&2; exit 1; }
 "$PYTHON_BIN" -c 'import PyInstaller, playwright, curl_cffi, fastapi'
 command -v xcrun >/dev/null
+if [[ "${REUSE_ENGINES:-0}" == "1" && ! -d "$ROOT/modules/chat-backup/dist/chat-backup-server/chat-backup-runtime" ]]; then
+  echo "Chat Backup engine cũ hoặc chưa build; hãy build lại modules/chat-backup/build-macos.sh trước khi REUSE_ENGINES=1." >&2
+  exit 1
+fi
 
 rm -rf "$BUILD" "$DIST"
 mkdir -p "$BUILD" "$DIST" "$APP/Contents/MacOS" "$APP/Contents/Resources/bin" "$APP/Contents/Resources/engines"
@@ -19,20 +23,23 @@ if [[ "${REUSE_ENGINES:-0}" != "1" ]]; then
   PYTHON_BIN="$PYTHON_BIN" "$ROOT/modules/twofa/build-macos.sh"
   (cd "$ROOT/modules/gpt-tool" && "$PYTHON_BIN" -m PyInstaller --noconfirm --clean gpt-tool.spec)
   PYTHON_BIN="$PYTHON_BIN" "$ROOT/modules/browser-login/build_macos.sh"
+  PYTHON_BIN="$PYTHON_BIN" "$ROOT/modules/chat-backup/build-macos.sh"
 fi
 
 echo "[2/5] Building Suite hub"
-"$PYTHON_BIN" -m PyInstaller --noconfirm --clean --onefile \
+"$PYTHON_BIN" -m PyInstaller --noconfirm --clean --onedir --contents-directory hub-runtime \
   --name shoptaikhoan-suite-hub \
   --add-data "$ROOT/web:web" \
   --distpath "$BUILD/hub-dist" --workpath "$BUILD/hub-work" --specpath "$BUILD/hub-spec" \
   "$ROOT/suite.py"
-cp "$BUILD/hub-dist/shoptaikhoan-suite-hub" "$APP/Contents/Resources/bin/"
+ditto "$BUILD/hub-dist/shoptaikhoan-suite-hub" "$APP/Contents/Resources/bin"
 
 echo "[3/5] Assembling one application"
 ditto "$ROOT/modules/twofa/dist/Shoptaikhoan Tool.app" "$APP/Contents/Resources/engines/TwoFA.app"
 ditto "$ROOT/modules/gpt-tool/dist/GPT-Tool.app" "$APP/Contents/Resources/engines/GPT-Tool.app"
 ditto "$ROOT/modules/browser-login/dist/shoptaikhoan auto tool.app" "$APP/Contents/Resources/engines/BrowserLogin.app"
+ditto "$ROOT/modules/chat-backup/dist/chat-backup-server" "$APP/Contents/Resources/engines"
+chmod 755 "$APP/Contents/Resources/engines/chat-backup-server"
 cp "$ROOT/packaging/macos/Info.plist" "$APP/Contents/Info.plist"
 ICON_WORK="$BUILD/icon"
 mkdir -p "$ICON_WORK/AppIcon.iconset"

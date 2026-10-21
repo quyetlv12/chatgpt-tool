@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chat Backup</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main>
+    <header>
+      <p class="eyebrow">CHATGPT · MODULE RIÊNG</p>
+      <h1>Sao chép lịch sử chat</h1>
+      <p class="lead">Tạo link Share ở tài khoản nguồn, mở bằng tài khoản đích và gửi một tin nhắn để lưu bản sao.</p>
+    </header>
+
+    <section class="notice" aria-label="Lưu ý an toàn">
+      <strong>Thông tin đăng nhập được hiển thị để bạn kiểm tra và chỉ nằm trong bộ nhớ của tiến trình này.</strong>
+      Tool không ghi mật khẩu, 2FA secret, cookie hoặc token vào database. Link Share mới sẽ được xóa sau khi bản sao được lưu.
+    </section>
+
+    <form id="backup-form" autocomplete="off">
+      <div class="accounts">
+        <label>
+          <span><b>1</b> Tài khoản nguồn</span>
+          <input id="source" type="text" spellcheck="false" autocomplete="off" placeholder="email|mật khẩu|2fa" required>
+          <small>Chỉ đọc danh sách chat và tạo link Share.</small>
+        </label>
+        <div class="arrow" aria-hidden="true">→</div>
+        <label>
+          <span><b>2</b> Tài khoản đích</span>
+          <input id="target" type="text" spellcheck="false" autocomplete="off" placeholder="email|mật khẩu|2fa" required>
+          <small>Nhận một chat mới cho mỗi link Share.</small>
+        </label>
+      </div>
+
+      <div class="options">
+        <label class="message-field">
+          <span>Tin nhắn dùng để lưu bản sao</span>
+          <input id="marker" type="text" maxlength="500" value="Đã lưu bản sao từ tài khoản nguồn.">
+        </label>
+        <label class="limit-field">
+          <span>Giới hạn chat</span>
+          <input id="limit" type="number" min="0" max="10000" value="0">
+          <small>0 = tất cả chat đã chọn</small>
+        </label>
+        <label class="check-field">
+          <input id="cleanup" type="checkbox" checked>
+          <span>Xóa link Share mới sau khi copy</span>
+        </label>
+      </div>
+
+      <div class="actions">
+        <button id="start" class="primary" type="submit">Tải danh sách chat</button>
+        <button id="stop" class="secondary" type="button" disabled>Dừng an toàn</button>
+        <p id="form-error" role="alert"></p>
+      </div>
+    </form>
+
+    <section id="selection-card" class="selection-card" aria-labelledby="selection-heading" hidden>
+      <div class="selection-head">
+        <div><p class="eyebrow">CHỌN CHAT CẦN BACKUP</p><h2 id="selection-heading">Cuộc hội thoại nguồn</h2></div>
+        <p id="selection-count" aria-live="polite">Đã chọn 0 / 0</p>
+      </div>
+      <p class="selection-note">Tích chọn tùy ý. Chưa có chat nào được sao chép cho đến khi bạn bấm backup.</p>
+      <div class="selection-tools">
+        <button id="select-all" class="secondary" type="button">Chọn tất cả</button>
+        <button id="select-none" class="secondary" type="button">Bỏ chọn tất cả</button>
+      </div>
+      <div id="conversation-list" class="conversation-list"></div>
+      <div class="actions">
+        <button id="backup-selected" class="primary" type="button" disabled>Backup các chat đã chọn</button>
+        <p id="selection-error" role="alert"></p>
+      </div>
+    </section>
+
+    <section class="progress-card" aria-live="polite">
+      <div class="progress-head">
+        <div>
+          <p class="eyebrow">TRẠNG THÁI</p>
+          <h2 id="status-message">Sẵn sàng</h2>
+        </div>
+        <span id="stage" class="pill">idle</span>
+      </div>
+      <div class="progress-track"><div id="progress-bar"></div></div>
+      <div class="stats">
+        <div><strong id="done">0</strong><span>Đã copy</span></div>
+        <div><strong id="failed">0</strong><span>Lỗi</span></div>
+        <div><strong id="skipped">0</strong><span>Đã có</span></div>
+        <div><strong id="total">0</strong><span>Tổng</span></div>
+      </div>
+      <p id="accounts-label" class="accounts-label"></p>
+    </section>
+
+    <section class="history-card">
+      <div class="history-head">
+        <div><p class="eyebrow">CHECKPOINT</p><h2>Kết quả gần đây</h2></div>
+        <button id="refresh-history" class="text-button" type="button">Làm mới</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Hội thoại</th><th>Trạng thái</th><th>Cập nhật</th></tr></thead>
+          <tbody id="history"><tr><td colspan="3" class="empty">Chưa có dữ liệu</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>

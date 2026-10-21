@@ -26,7 +26,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for (title, address) in [
             ("2FA & Password", "http://twofa.localhost:5050/"),
             ("Codex Export", "http://export.localhost:5050/"),
-            ("Browser Login & 9Router", "http://browser.localhost:5050/")
+            ("Browser Login & 9Router", "http://browser.localhost:5050/"),
+            ("Chat Backup", "http://backup.localhost:5050/")
         ] {
             let tool = NSMenuItem(title: title, action: #selector(openTool(_:)), keyEquivalent: "")
             tool.target = self
@@ -91,6 +92,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         env["SHOPTAIKHOAN_SUITE_TWOFA_EXECUTABLE"] = engines.appendingPathComponent("TwoFA.app/Contents/MacOS/Shoptaikhoan Tool").path
         env["SHOPTAIKHOAN_SUITE_EXPORT_EXECUTABLE"] = engines.appendingPathComponent("GPT-Tool.app/Contents/MacOS/GPT-Tool").path
         env["SHOPTAIKHOAN_SUITE_BROWSER_EXECUTABLE"] = engines.appendingPathComponent("BrowserLogin.app/Contents/Resources/bin/shoptaikhoan-server").path
+        env["SHOPTAIKHOAN_SUITE_CHAT_BACKUP_EXECUTABLE"] = engines.appendingPathComponent("chat-backup-server").path
         env["SHOPTAIKHOAN_AUTO_LOGIN_EXECUTABLE"] = engines.appendingPathComponent("BrowserLogin.app/Contents/Resources/bin/shoptaikhoan-auto-login").path
         env["PLAYWRIGHT_BROWSERS_PATH"] = engines.appendingPathComponent("BrowserLogin.app/Contents/Resources/ms-playwright", isDirectory: true).path
         env["SHOPTAIKHOAN_NO_MENU_BAR"] = "1"

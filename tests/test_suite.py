@@ -23,8 +23,14 @@ class SuiteManagerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"SHOPTAIKHOAN_SUITE_DATA_DIR": directory}, clear=False):
             modules = suite.build_modules(ROOT, Path(sys.executable))
 
-        self.assertEqual({module.public_host for module in modules}, {"twofa.localhost", "export.localhost", "browser.localhost"})
-        self.assertEqual({module.socket_path.name for module in modules}, {"twofa.sock", "export.sock", "browser.sock"})
+        self.assertEqual(
+            {module.public_host for module in modules},
+            {"twofa.localhost", "export.localhost", "browser.localhost", "backup.localhost"},
+        )
+        self.assertEqual(
+            {module.socket_path.name for module in modules},
+            {"twofa.sock", "export.sock", "browser.sock", "chat-backup.sock"},
+        )
         self.assertTrue(all(module.cwd.is_dir() for module in modules))
 
     def test_packaged_executable_overrides_replace_source_commands(self):
@@ -32,10 +38,12 @@ class SuiteManagerTests(unittest.TestCase):
             "SHOPTAIKHOAN_SUITE_TWOFA_EXECUTABLE": "/app/twofa",
             "SHOPTAIKHOAN_SUITE_EXPORT_EXECUTABLE": "/app/export",
             "SHOPTAIKHOAN_SUITE_BROWSER_EXECUTABLE": "/app/browser",
+            "SHOPTAIKHOAN_SUITE_CHAT_BACKUP_EXECUTABLE": "/app/chat-backup",
         }
         with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {**overrides, "SHOPTAIKHOAN_SUITE_DATA_DIR": directory}, clear=False):
             modules = suite.build_modules(ROOT, Path(sys.executable))
             twofa_socket = str(Path(directory) / "s" / "twofa.sock")
+            chat_backup_socket = str(Path(directory) / "s" / "chat-backup.sock")
 
         self.assertEqual(
             [module.command for module in modules],
@@ -43,8 +51,10 @@ class SuiteManagerTests(unittest.TestCase):
                 ("/app/twofa", "--uds", twofa_socket, "--port", "5050", "--no-browser"),
                 ("/app/export",),
                 ("/app/browser",),
+                ("/app/chat-backup",),
             ],
         )
+        self.assertEqual(modules[-1].env["CHAT_BACKUP_SOCKET"], chat_backup_socket)
 
     def test_runtime_root_can_live_outside_the_app_bundle(self):
         with tempfile.TemporaryDirectory() as directory:
